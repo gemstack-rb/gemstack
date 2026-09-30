@@ -1,5 +1,3 @@
-# gems/gemstack/lib/gemstack/cli/add_next_steps.rb
-
 # frozen_string_literal: true
 
 module GemStack

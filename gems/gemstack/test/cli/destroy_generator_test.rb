@@ -41,7 +41,7 @@ module DestroyTestSupport
   end
 end
 
-class DestroyMigrationTest < Minitest::Test
+module DestroyMigrationSupport
   include DestroyTestSupport
 
   def setup
@@ -87,6 +87,7 @@ class DestroyMigrationTest < Minitest::Test
     )
 
     assert status.success?, output + error
+    git("init", "--quiet")
   end
 
   def in_app(*command, environment: "development")
@@ -100,7 +101,7 @@ class DestroyMigrationTest < Minitest::Test
           "GEMSTACK_ENV" => environment,
           "DATABASE_URL" => nil,
           "TEST_DATABASE_URL" => nil
-        }.compact,
+        },
         *command,
         chdir: @root
       )
@@ -109,18 +110,145 @@ class DestroyMigrationTest < Minitest::Test
     defined?(Bundler) ? Bundler.with_unbundled_env(&run) : run.call
   end
 
+  def git(*)
+    output, error, status = Open3.capture3("git", *, chdir: @root)
+    assert status.success?, output + error
+  end
+
+  def commit_generated_files
+    git("init")
+    git("config", "user.email", "test@gemstack.local")
+    git("config", "user.name", "GemStack Test")
+    git("add", ".")
+    git("commit", "-m", "Add generated resource")
+  end
+
   def app_eval(code, **)
     output, error, status = in_app("bundle", "exec", "ruby", "-r", "./config/app", "-e", code, **)
     assert status.success?, output + error
     output.strip
   end
 
-  def destroy(**, &)
-    super(environment: "development", **, &)
+  def destroy(kind = "resource", name = "Post", **, &)
+    super(kind, name, environment: "development", **, &)
   end
 
   def migrations = Dir["#{@root}/db/migrations/*_create_posts.rb"]
-  def migrate = app_eval("GemStack::DB::Migrator.new.migrate")
+
+  def migrate(environment: "development")
+    app_eval("GemStack::DB::Migrator.new.migrate", environment: environment)
+  end
+end
+
+class DestroyGitMigrationTest < Minitest::Test
+  include DestroyMigrationSupport
+
+  def test_pending_locally_but_committed_migration_is_preserved
+    resource(parts: %i[migration model serializer])
+    path = migrations.first
+
+    commit_generated_files
+    migrate(environment: "test")
+
+    destroy("model")
+
+    assert File.exist?(path)
+    assert_includes @output.string, "pending but committed to Git"
+    migrate(environment: "test")
+    assert_equal "true", app_eval("puts GemStack.db.table_exists?(:posts)", environment: "test")
+  end
+
+  def test_remove_migrations_removes_committed_pending_migration
+    resource(parts: %i[migration model serializer])
+    path = migrations.first
+
+    commit_generated_files
+    migrate(environment: "test")
+
+    destroy("model", remove_migrations: true)
+
+    refute File.exist?(path)
+  end
+
+  def test_uncommitted_pending_migration_is_removed_automatically
+    resource(parts: %i[migration model serializer])
+    path = migrations.first
+
+    destroy("model")
+
+    refute File.exist?(path)
+  end
+
+  def test_cli_remove_migrations_removes_committed_pending_migration
+    resource(parts: %i[migration model serializer])
+    path = migrations.first
+
+    commit_generated_files
+    migrate(environment: "test")
+
+    output, error, status = in_app(
+      "bundle",
+      "exec",
+      "gemstack",
+      "d",
+      "model",
+      "Post",
+      "--yes",
+      "--remove-migrations",
+      "--skip-contract"
+    )
+
+    assert status.success?, output + error
+    refute File.exist?(path)
+  end
+
+  def test_no_git_repository_preserves_pending_migrations
+    FileUtils.remove_entry("#{@root}/.git")
+    resource
+    destroy
+    assert_equal 1, migrations.size
+    assert_includes @output.string, "Git state is unknown"
+  end
+
+  def test_explicit_removal_never_deletes_applied_migrations
+    resource
+    migrate
+    destroy(remove_migrations: true, force: true)
+    assert_equal 1, migrations.size
+    migrate
+  end
+
+  def test_explicit_removal_with_unknown_database_state_preserves_migrations
+    resource
+    write("config/app.rb", "raise 'database unavailable'\n")
+    destroy(remove_migrations: true)
+    assert_equal 1, migrations.size
+  end
+
+  def test_explicit_removal_dry_run_preserves_committed_migration
+    resource
+    commit_generated_files
+    before = snapshot
+    destroy(remove_migrations: true, dry_run: true)
+    assert_equal before, snapshot
+  end
+
+  def test_commit_during_confirmation_prevents_automatic_migration_removal
+    resource
+    error = assert_raises(Thor::Error) do
+      destroy do
+        commit_generated_files
+        true
+      end
+    end
+    assert_includes error.message, "Migration Git state changed"
+    assert exists?("app/models/post.rb")
+    assert_equal 1, migrations.size
+  end
+end
+
+class DestroyMigrationTest < Minitest::Test
+  include DestroyMigrationSupport
 
   def test_pending_destroy_regenerate_and_migrate
     resource
@@ -144,9 +272,13 @@ class DestroyMigrationTest < Minitest::Test
     assert_includes @output.string, "db:rollback"
     assert_includes @output.string, "drops the table"
     resource(fields: %w[title:string description:text:optional])
+    assert_includes @output.string, "gemstack g migration AddDescriptionToPosts description:text:optional"
+    GemStack::CLI::MigrationGenerator.new("AddDescriptionToPosts", ["description:text:optional"],
+                                          root: @root, output: @output).run
     migrate
     assert_equal(original, migrations.to_h { |path| [path, File.binread(path)] })
     assert_equal "Keep me", app_eval("puts GemStack.db[:posts].get(:title)")
+    assert_equal "true", app_eval("puts GemStack.db.schema(:posts).to_h.key?(:description)")
     assert_includes @output.string, "use a new migration for schema changes"
   end
 

@@ -148,6 +148,7 @@ module GemStack
       def existing_migration?
         paths = Dir.glob(File.join(@root, "db/migrations/*_create_#{spec.table}.rb"))
         paths.each { |path| status("keep", path, "existing create migration; use a new migration for schema changes") }
+        MigrationChanges.new(self, root: @root, output: @output).report(paths) unless paths.empty?
         !paths.empty?
       end
 

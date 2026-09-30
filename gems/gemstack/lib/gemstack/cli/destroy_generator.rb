@@ -18,14 +18,23 @@ module GemStack
         cli.method_option :dry_run, type: :boolean, default: false, desc: "Preview without changing files or contracts"
         cli.method_option :yes, type: :boolean, default: false, desc: "Confirm removal without an interactive prompt"
         cli.method_option :force, type: :boolean, default: false, desc: "Allow removing modified, tracked files"
+        cli.method_option :remove_migrations, type: :boolean, default: false,
+                                              desc: "Remove pending migrations even if committed to Git"
         cli.method_option :skip_contract, type: :boolean, default: false, desc: "Don't regenerate the API contract"
       end
 
       def self.invoke(kind, name, cli:)
         options = cli.options
         root = Project.root!
-        removal = new(kind, name, root: root, dry_run: options[:dry_run], force: options[:force],
-                                  environment: options[:environment])
+        removal = new(
+          kind,
+          name,
+          root: root,
+          dry_run: options[:dry_run],
+          force: options[:force],
+          remove_migrations: options[:remove_migrations],
+          environment: options[:environment]
+        )
         removal.run { options[:yes] || confirm?(cli) }
         yield root if removal.changed? && !options[:skip_contract]
       end
@@ -36,7 +45,8 @@ module GemStack
         %w[y yes].include?(cli.ask("Remove the listed generated files and routes? [y/N]").strip.downcase)
       end
 
-      def initialize(kind, name, root:, dry_run: false, force: false, output: $stdout, environment: nil)
+      def initialize(kind, name, root:, dry_run: false, force: false, remove_migrations: false,
+                     output: $stdout, environment: nil)
         super(output: output, force: force)
         unless KINDS.include?(kind) && name && !name.empty?
           raise Thor::Error, "Usage: gemstack destroy model|controller|resource NAME"
@@ -45,10 +55,12 @@ module GemStack
         @root = File.expand_path(root)
         @kind = kind
         @dry_run = dry_run
+        @remove_migrations = remove_migrations
         @owners = owners_for(name)
         @manifest = GenerationManifest.new(@root)
         @environment = environment || ENV.fetch("GEMSTACK_ENV", "development")
         @migration_status = MigrationStatus.new(@root, environment: @environment)
+        @migration_git_status = MigrationGitStatus.new(@root)
         @changed = false
       end
 
@@ -116,8 +128,31 @@ module GemStack
 
         @applied = @migration_status.applied
         @pending = @migrations.reject { |path, _| @applied.nil? || @applied.include?(File.basename(path)) }
-        @files.merge!(@pending)
-        @migrations = @migrations.except(*@pending.keys)
+        @migration_reasons = {}
+        @auto_removed_migrations = {}
+
+        @migrations.each do |path, entry|
+          reason = migration_retention_reason(path)
+          if reason
+            @migration_reasons[path] = reason
+          else
+            @files[path] = entry
+            @auto_removed_migrations[path] = entry unless @remove_migrations
+          end
+        end
+
+        @migrations = @migrations.select { |path, _| @migration_reasons.key?(path) }
+      end
+
+      def migration_retention_reason(path)
+        return "database state unknown" if @applied.nil?
+        return "already applied" if @applied.include?(File.basename(path))
+        return if @remove_migrations
+
+        case @migration_git_status.committed(path)
+        when true then "pending but committed to Git; use --remove-migrations to remove"
+        when nil then "pending but Git state is unknown; use --remove-migrations to remove"
+        end
       end
 
       def plan_routes
@@ -178,7 +213,9 @@ module GemStack
       end
 
       def preview
-        @migrations.each_key { |path| status("keep", path, @applied ? "already applied" : "database state unknown") }
+        @migrations.each_key do |path|
+          status("keep", path, @migration_reasons.fetch(path))
+        end
         unless @migrations.empty?
           @output.puts("To remove the table, review `gemstack db:status -e #{@environment}` and roll back with " \
                        "`gemstack db:rollback -e #{@environment}` " \
@@ -198,8 +235,13 @@ module GemStack
       # Recheck after interactive confirmation, before the first mutation.
       def verify_snapshot!
         @manifest.verify!
+
         if @pending && !@pending.empty? && @migration_status.applied != @applied
           raise Thor::Error, "Migration state changed or became unavailable; run destroy again"
+        end
+
+        if @auto_removed_migrations&.any? { |path, _| @migration_git_status.committed(path) != false }
+          raise Thor::Error, "Migration Git state changed; run destroy again"
         end
 
         @snapshots.each do |relative, original|
@@ -210,6 +252,7 @@ module GemStack
                   "File changed during confirmation: #{relative}; run destroy again"
           end
         end
+
         path = @manifest.absolute("config/routes.rb")
         current = File.file?(path) ? File.read(path, encoding: "UTF-8") : ""
         return if current == @route_content

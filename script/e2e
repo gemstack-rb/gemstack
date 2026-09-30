@@ -26,6 +26,7 @@ step() { printf "\n\033[1m== %s\033[0m\n" "$*"; }
 step "gemstack new --database=$DATABASE"
 "$ROOT/bin/gemstack" new "$APP" --skip-git --database="$DATABASE" > "$WORK/new.log" 2>&1 || { cat "$WORK/new.log"; exit 1; }
 cd "$APP"
+git init --quiet
 grep -q "adapter: $DATABASE" config/database.yml || { echo "config/database.yml doesn't use $DATABASE"; exit 1; }
 if [ -n "${SERVER:-}" ]; then
   printf "DATABASE_URL=%s/e2e_app_development\nTEST_DATABASE_URL=%s/e2e_app_test\n" "$SERVER" "$SERVER" > .env
@@ -138,13 +139,17 @@ ruby -r ./config/app -e '
 '
 bin/gemstack d resource Post --yes
 
-step "regenerate an applied resource without duplicating its create migration"
-bin/gemstack g resource Post title:string body:text:optional --skip-contract
+step "regenerate an applied resource and migrate an added column"
+bin/gemstack g resource Post title:string body:text:optional price:decimal:optional --skip-contract > "$WORK/regenerate.log"
+cat "$WORK/regenerate.log"
+grep -q 'gemstack g migration AddPriceToPosts price:decimal:optional' "$WORK/regenerate.log"
+bin/gemstack g migration AddPriceToPosts price:decimal:optional
 bin/gemstack db:migrate
 ruby -r ./config/app -e '
   GemStack.boot!
   abort "Duplicate create migration" unless Dir["db/migrations/*_create_posts.rb"].one?
   abort "Lost data on regeneration" unless Post.first.title == "Preserved data"
+  abort "Missing regenerated field" unless GemStack.db.schema(:posts).to_h.key?(:price)
 '
 bin/gemstack d resource Post --yes
 
@@ -158,6 +163,17 @@ bin/gemstack d model Draft --yes --skip-contract
 bin/gemstack g controller Exports index show
 bin/gemstack d controller Exports --yes
 test ! -f app/controllers/exports_controller.rb
+
+step "destroy in development preserves a committed migration already applied in test"
+bin/gemstack g model SharedDraft title:string
+git add db/migrations/*_create_shared_drafts.rb
+git -c user.name="GemStack Test" -c user.email="test@gemstack.local" \
+  commit --quiet --no-gpg-sign -m "Add shared draft migration"
+bin/gemstack db:migrate -e test
+bin/gemstack d model SharedDraft --yes --skip-contract
+test ! -f app/models/shared_draft.rb
+test -n "$(find db/migrations -name '*_create_shared_drafts.rb' -print)"
+bin/gemstack db:migrate -e test
 
 bin/gemstack db:migrate
 bin/gemstack test

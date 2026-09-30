@@ -2,6 +2,13 @@
 
 All GemStack gems are released together with one version.
 
+## Unreleased
+
+- Add `destroy` / `d` for tracked models, controllers and resources, with preview, modified-file protection
+  and contract refresh. Automatically remove only pending, uncommitted migrations; retain applied or
+  committed history, with `--remove-migrations` for explicit removal of pending migrations. Reuse create
+  migrations on regeneration and print migration commands for new or changed fields.
+
 ## 0.3.3
 
 - Add the `gsk` executable alias, including app-local binstubs and matching help output.
@@ -14,9 +21,6 @@ All GemStack gems are released together with one version.
 
 ## 0.3.1
 
-- Add `destroy` / `d` for tracked models, controllers and resources, with preview, modified-file protection
-  and contract refresh. Remove confirmed pending migrations, retain applied history, and reuse existing
-  create migrations when regenerating a resource.
 - New GemStack logo: a ruby gem on a stack. New apps show it on their welcome page (light and dark
   mode); the logo files are in `docs/assets/logo/`.
 - Docs: associations and eager loading in [models](docs/models.md): the Sequel equivalents of Rails'
