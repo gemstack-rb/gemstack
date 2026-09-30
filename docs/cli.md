@@ -1,8 +1,9 @@
 # Command reference
 
 Every command runs inside an application folder (the one with `config/app.rb`),
-except `gemstack new`. `gemstack help COMMAND` shows all options. `g` is short
-for `generate`.
+except `gemstack new`. Use either `gemstack` or its shorter executable alias
+`gs`; both run the same commands. Help is available with `gemstack help COMMAND`
+or `gs help COMMAND`. `g` is short for `generate`.
 
 ## Create and run
 
@@ -35,6 +36,7 @@ gemstack console -e test
 gemstack server -e production -p 4000
 gemstack routes -e production
 gemstack db:migrate -e test         # every db:* command
+gs db:migrate -e test               # same command through the short executable
 gemstack jobs -e production
 GEMSTACK_ENV=production gemstack console   # the same, through the environment variable
 ```

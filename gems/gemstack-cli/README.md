@@ -8,7 +8,9 @@ version.
 
 ## Installation
 
-Installed with the `gemstack` gem; you rarely need to add it yourself.
+Installed with the `gemstack` gem; you rarely need to add it yourself. The `gs`
+executable is a short alias for `gemstack`, so commands such as `gs db:migrate`
+work the same way.
 
 ## Documentation
 

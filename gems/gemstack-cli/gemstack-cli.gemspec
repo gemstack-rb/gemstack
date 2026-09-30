@@ -16,7 +16,7 @@ Gem::Specification.new do |spec|
                    "exe/*"]
   spec.require_paths = ["lib"]
   spec.bindir = "exe"
-  spec.executables = ["gemstack"]
+  spec.executables = ["gemstack", "gs"]
   spec.metadata["rubygems_mfa_required"] = "true"
   spec.metadata["source_code_uri"] = "https://github.com/gemstack-rb/gemstack/tree/main/gems/gemstack-cli"
   spec.metadata["changelog_uri"] = "https://github.com/gemstack-rb/gemstack/blob/main/gems/gemstack-cli/CHANGELOG.md"
