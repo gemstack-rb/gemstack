@@ -44,8 +44,7 @@ In production the console connects to the production database: changes are
 real. The environment's variables must be set, as for the server
 (`SECRET_KEY_BASE`, `DATABASE_URL`…). `gemstack dev` always runs in
 development and `gemstack test` in test; generators don't depend on an
-environment. Inside the console, `GemStack.env` shows the environment and
-`GemStack.application.reload!` reloads code.
+environment. Inside the console, `GemStack.env` shows the environment and `reload!` reloads application code.
 
 ## Generators
 
