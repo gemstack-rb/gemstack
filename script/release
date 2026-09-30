@@ -22,7 +22,7 @@ if git rev-parse --abbrev-ref '@{upstream}' > /dev/null 2>&1; then
 else
   fail "main has no upstream — push the monorepo first (git push -u origin main)"
 fi
-current=$(ruby -e 'require "./gems/gemstack-core/lib/gemstack/version"; print GemStack::VERSION')
+current=$(ruby -e 'require "./gems/gemstack/lib/gemstack/version"; print GemStack::VERSION')
 [ "$current" = "$VERSION" ] || fail "the code is at $current — run: bundle exec rake version:set[$VERSION], commit, push"
 grep -q "^## $VERSION" CHANGELOG.md || fail "add a '## $VERSION' section to CHANGELOG.md"
 
@@ -38,12 +38,13 @@ echo "== build and check"
 bundle exec rake gems:check
 
 echo "== push to rubygems.org (you'll be asked for your MFA code)"
-for gem in $(script/gems); do
-  if curl -fsS -o /dev/null "https://rubygems.org/api/v2/rubygems/$gem/versions/$VERSION.json" 2>/dev/null; then
-    echo "   $gem $VERSION is already published — skipped"
+# gemstack-cli, gemstack, then gemstack-auth and gemstack-realtime.
+script/gems | while read -r gem version; do
+  if curl -fsS -o /dev/null "https://rubygems.org/api/v2/rubygems/$gem/versions/$version.json" 2>/dev/null; then
+    echo "   $gem $version is already published — skipped"
     continue
   fi
-  gem push "pkg/$gem-$VERSION.gem"
+  gem push "pkg/$gem-$version.gem" < /dev/tty
 done
 
 git tag -a "v$VERSION" -m "GemStack $VERSION" 2>/dev/null || echo "tag v$VERSION exists"

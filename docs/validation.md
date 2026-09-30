@@ -1,6 +1,6 @@
 # Validation
 
-Request input is validated and coerced by **schemas** (`gemstack-schema`).
+Request input is validated and coerced by **schemas** (`GemStack::Schema`).
 Model validations (see [models](models.md)) are a second line of defence at
 the data layer.
 

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # All GemStack gems share one version; change it with `rake version:set[x.y.z]`.
-version = "0.2.5"
+version = "0.3.0"
 
 Gem::Specification.new do |spec|
   spec.name = "gemstack-auth"
@@ -21,10 +21,6 @@ Gem::Specification.new do |spec|
   spec.metadata["documentation_uri"] = "https://github.com/gemstack-rb/gemstack/tree/main/docs"
 
   spec.add_dependency "argon2", "~> 2.3"
-  spec.add_dependency "gemstack-cache", version
-  spec.add_dependency "gemstack-core", version
-  spec.add_dependency "gemstack-db", version
-  spec.add_dependency "gemstack-http", version
-  spec.add_dependency "gemstack-mail", version
+  spec.add_dependency "gemstack", version
   # Verifying legacy bcrypt hashes needs bcrypt in the app's Gemfile (optional).
 end

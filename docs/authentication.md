@@ -8,7 +8,8 @@ gemstack db:migrate
 gemstack dev            # open http://localhost:3000/signup
 ```
 
-This adds `gemstack-auth` and `gemstack-mail`, and generates code you own:
+This adds the `gemstack-auth` gem, switches on `require "gemstack/mail"` (and
+`gemstack/jobs`, for sending emails) in `config/app.rb`, and generates code you own:
 
 | Generated | What it is |
 | --- | --- |

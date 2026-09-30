@@ -4,7 +4,7 @@
 gemstack add storage
 ```
 
-Adds `gemstack-storage`, `POST /api/uploads` (`UploadsController`),
+Switches on `require "gemstack/storage"` in `config/app.rb` and adds `POST /api/uploads` (`UploadsController`),
 `frontend/lib/upload.ts` and test helpers. Files go **straight from the
 browser to storage** — never through a Ruby process, so `max_body_size` stays
 small and uploads don't tie up server threads.

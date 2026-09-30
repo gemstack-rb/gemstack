@@ -1,29 +1,7 @@
 # Changelog
 
-## 0.2.5
+## 0.3.0
 
-See the [GemStack changelog](https://github.com/gemstack-rb/gemstack/blob/main/CHANGELOG.md).
+Only the `gemstack` executable; the CLI code moved into the gemstack gem. See the [GemStack changelog](https://github.com/gemstack-rb/gemstack/blob/main/CHANGELOG.md).
 
-## 0.2.4
-
-See the [GemStack changelog](https://github.com/gemstack-rb/gemstack/blob/main/CHANGELOG.md).
-
-## 0.2.3
-
-See the [GemStack changelog](https://github.com/gemstack-rb/gemstack/blob/main/CHANGELOG.md).
-
-## 0.2.2
-
-See the [GemStack changelog](https://github.com/gemstack-rb/gemstack/blob/main/CHANGELOG.md).
-
-## 0.2.1
-
-See the [GemStack changelog](https://github.com/gemstack-rb/gemstack/blob/main/CHANGELOG.md).
-
-## 0.2.0
-
-See the [GemStack changelog](https://github.com/gemstack-rb/gemstack/blob/main/CHANGELOG.md).
-
-## 0.1.0
-
-First release. See the [GemStack changelog](https://github.com/gemstack-rb/gemstack/blob/main/CHANGELOG.md).
+Earlier versions: see the GemStack changelog.

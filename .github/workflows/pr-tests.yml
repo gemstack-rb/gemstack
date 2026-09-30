@@ -1,0 +1,33 @@
+# Every pull request that changes a module's code must change that module's
+# tests too (script/changes --check). For a change that really needs none (a
+# pure refactor, comments), a maintainer adds the "no-tests-needed" label —
+# contributors can't label their own pull requests. The tests themselves run
+# in ci.yml.
+name: Tests for changes
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  tests-included:
+    name: Changed code has tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+      - name: Every changed module has test changes
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-tests-needed') }}
+        env:
+          GEMSTACK_BASE: origin/${{ github.base_ref }}
+        run: script/changes --check
+      - name: Skipped by a maintainer
+        if: ${{ contains(github.event.pull_request.labels.*.name, 'no-tests-needed') }}
+        run: echo "The no-tests-needed label is set; not checking for test changes."

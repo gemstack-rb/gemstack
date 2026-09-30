@@ -98,7 +98,7 @@ gemstack jobs -q mailers,default -c 10     # specific queues, 10 threads
 
 | Adapter | Default | Notes |
 |---|---|---|
-| `:postgres` | with `gemstack-db` | durable, transactional, needs `gemstack jobs` processes |
+| `:database` (alias `:postgres`) | with `gemstack/db` loaded | durable, transactional, needs `gemstack jobs` processes |
 | `:test` | in tests | records jobs; see below |
 | `:async` | without a database | in-process threads; jobs are lost on restart — development only |
 | `:inline` | — | runs immediately in the caller and raises errors |
@@ -160,7 +160,7 @@ GemStack::Jobs.subscribe { |event| Metrics.increment("jobs.#{event.name}") }   #
 
 | Setting | Default |
 |---|---|
-| `config.jobs.adapter` | `:postgres` (with gemstack-db), `:async` otherwise, `:test` in tests |
+| `config.jobs.adapter` | `:database` (with `gemstack/db` loaded), `:async` otherwise, `:test` in tests |
 | `config.jobs.queues` | `GEMSTACK_JOB_QUEUES` or `*` (all) |
 | `config.jobs.concurrency` | `GEMSTACK_JOB_CONCURRENCY` or 5 |
 | `config.jobs.default_queue` / `default_priority` | `"default"` / `100` |

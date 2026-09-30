@@ -14,7 +14,7 @@ presented as a single application.
                         ▼
                  localhost:3000            (one public origin)
                         │
-                 GemStack Gateway          (dev: gemstack-dev; prod: your proxy or Next rewrites)
+                 GemStack Gateway          (dev: gemstack dev; prod: your proxy or Next rewrites)
                   /            \
       everything else          /api/*
                 /                \
@@ -53,60 +53,69 @@ resources: no User, no auth, no CRUD — only infrastructure.
 
 ---
 
-## 2. Module / dependency graph
+## 2. Gems and modules
 
-GemStack is a monorepo of independent gems with one-directional dependencies.
+GemStack is published as four gems, developed together in this repository and
+released with one version:
+
+| Gem | What it is | Dependencies |
+|---|---|---|
+| `gemstack` | the framework: every module below except auth and realtime, the CLI code and generators | rack, json, sequel, mail, erubi, thor, puma, zeitwerk, bigdecimal, gemstack-cli |
+| `gemstack-cli` | only the `gemstack` executable (its code is `gemstack/cli` in the gemstack gem) | none |
+| `gemstack-auth` | authentication and policies — `gemstack add auth` | gemstack, argon2 (native) |
+| `gemstack-realtime` | Server-Sent Events — `gemstack add realtime` | gemstack, nio4r (native) |
+
+Auth and realtime are separate gems only because of their native
+dependencies. The names `gemstack-core`, `-cache`, `-schema`, `-http`, `-db`,
+`-jobs`, `-mail`, `-storage`, `-contract` and `-dev` were separate gems until
+0.3.0; their last versions are shims that depend on `gemstack` and load the
+module.
+
+Inside the `gemstack` gem, each module is a directory under `lib/gemstack/`,
+with one-directional dependencies:
 
 ```text
-                gemstack  (umbrella: Application, boot, autoload, reloading, testing)
-      ┌───────┬────────┼──────────┬──────────┬──────────┐
-      ▼       ▼        ▼          ▼          ▼          ▼
- gemstack-cli gemstack-contract gemstack-http gemstack-dev   zeitwerk, puma
-   │   │          │    │          │   │        │
-   │  thor        │    └────┐     │  rack      │
-   │              ▼         ▼     ▼            │
-   │           gemstack-http  gemstack-schema  │
-   │                              │            │
-   └──────────────────────▶ gemstack-core ◀────┘      (zero runtime dependencies)
-                                   ▲
-       gemstack-db (optional) ─────┴── gemstack-schema, sequel, pg
-       gemstack-cache ─────────────┘   (umbrella includes it; Redis via optional redis-client)
-       gemstack-jobs ──────────────┘   (optional in the Gemfile; :postgres adapter loads gemstack-db on demand)
-       gemstack-realtime ── core, schema, http, nio4r   (optional: `gemstack add realtime`)
-       gemstack-mail ────── core, mail, erubi          (jobs loaded on demand for deliver_later)
-       gemstack-storage ─── core, http                 (aws-sdk-s3 optional, for :s3)
-       gemstack-auth ────── core, cache, http, db, mail, argon2   (optional: `gemstack add auth`)
+  app  (lib/gemstack.rb: Application, boot, autoload, reloading, testing)
+   │
+   ├── cli ── dev ── contract          `gemstack` command, gateway + supervisor, TypeScript/OpenAPI
+   │
+   ├── realtime, auth                  (separate gems)
+   │
+   ├── storage ── mail ── jobs ── db   opt-in: require "gemstack/db" (…) in config/app.rb
+   │
+   └── http ── schema ── cache ── core (core: Ruby's standard library only)
 ```
 
-Rules (enforced by `gems/gemstack/test/architecture_test.rb`):
+Rules (enforced by `gems/gemstack/test/app/architecture_test.rb`, on the
+require graph):
 
-1. **`gemstack-core` depends on nothing** (Ruby stdlib only) and never
-   references another GemStack gem.
-2. Dependencies only point down the order
-   `core → cache → schema → http → db → jobs → realtime → mail → storage → auth → contract → dev → cli → umbrella`. **Core never
-   depends on an optional module**, and nothing depends on the umbrella.
-3. **`gemstack-db` never depends on `gemstack-http`**; it gives database errors
-   their HTTP meaning through core's `ErrorMapping`.
-4. **The umbrella does not depend on `gemstack-db`**; apps opt in through
-   their Gemfile (new apps include it unless `--skip-database`).
+1. **`core` uses only Ruby's standard library** and never loads another module.
+2. Requires only point down the order
+   `core → cache → schema → http → db → jobs → mail → storage → realtime → auth → contract → dev → cli → app`.
+3. **`db` never loads `http`**; it gives database errors their HTTP meaning
+   through core's `ErrorMapping`.
+4. **`require "gemstack"` loads only core, cache, schema, http, contract and
+   dev.** Apps switch on db, jobs, mail and storage with `require
+   "gemstack/<module>"` in `config/app.rb` (`gemstack new` writes the ones it
+   uses; `gemstack add storage` adds its line).
 5. Modules plug in by registering config namespaces and `Plugins` hooks.
 
-| Gem | Responsibility | Runtime deps |
-|---|---|---|
-| `gemstack-core` | `GemStack` namespace, settings DSL, environment, `.env` loading, logger, errors, `ErrorMapping`, inflector, plugins | none |
-| `gemstack-cache` | `GemStack.cache`: memory (LRU/TTL), null, Redis stores | core |
-| `gemstack-schema` | shared `Types`, request `Schema`s, `Serializer`s (compiled plans) | core, bigdecimal |
-| `gemstack-http` | Rack request/response, router, middleware, controllers (`accepts`/`input`/`returns`, serializer lookup), params, JSON codec, error rendering | core, schema, rack, json |
-| `gemstack-db` | Sequel connection + pool for SQLite/PostgreSQL/MySQL, `config/database.yml`, portable migration types, `GemStack::Model`, error mapping, migrations, db tasks, test support | core, schema, sequel (driver gem chosen by the app) |
-| `gemstack-jobs` | `GemStack::Job`, adapters (postgres/async/inline/test/sidekiq), worker, test helpers | core (+ gemstack-db for :postgres) |
-| `gemstack-realtime` | `GemStack.broadcast`, channels, SSE endpoint (hijack + nio4r), brokers, test helpers | core, schema, http, nio4r |
-| `gemstack-mail` | `GemStack::Mailer`, ERB templates (HTML-escaped), :smtp/:log/:test delivery, `deliver_later` job, test helpers | core, mail, erubi |
-| `gemstack-storage` | `GemStack::Storage`: disk and S3 services, signed URLs, direct uploads, disk endpoint, test helpers | core, http |
-| `gemstack-auth` | Argon2id passwords, DB sessions (cookie), API/reset/verification tokens, controller helpers, CSRF origin check, `rate_limit`, `GemStack::Policy` | core, cache, http, db, mail, argon2 |
-| `gemstack-contract` | contract IR from routes/schemas/serializers → TypeScript types + clients, OpenAPI 3.1 | core, schema, http |
-| `gemstack-dev` | dev gateway, process supervisor, file watcher, background contract regeneration | core |
-| `gemstack-cli` | `gemstack` executable, generators (app, resource, model, migration, controller, job, policy), `add realtime/auth/storage`, `db:*`, `contract` | core, dev, thor |
-| `gemstack` | `GemStack::Application`: boot, Zeitwerk autoloading, reloading, testing helpers | all of the above except db, zeitwerk, puma |
+| Module | Responsibility |
+|---|---|
+| `core` | `GemStack` namespace, settings DSL, environment, `.env` loading, logger, errors, `ErrorMapping`, inflector, plugins |
+| `cache` | `GemStack.cache`: memory (LRU/TTL), null, Redis stores |
+| `schema` | shared `Types`, request `Schema`s, `Serializer`s (compiled plans) |
+| `http` | Rack request/response, router, middleware, controllers (`accepts`/`input`/`returns`, serializer lookup), params, JSON codec, error rendering |
+| `db` | Sequel connection + pool for SQLite/PostgreSQL/MySQL, `config/database.yml`, portable migration types, `GemStack::Model`, error mapping, migrations, db tasks, test support |
+| `jobs` | `GemStack::Job`, adapters (database/async/inline/test/sidekiq), worker, test helpers |
+| `mail` | `GemStack::Mailer`, ERB templates (HTML-escaped), :smtp/:log/:test delivery, `deliver_later` job, test helpers |
+| `storage` | `GemStack::Storage`: disk and S3 services, signed URLs, direct uploads, disk endpoint, test helpers |
+| `realtime` *(gem)* | `GemStack.broadcast`, channels, SSE endpoint (hijack + nio4r), brokers, test helpers |
+| `auth` *(gem)* | Argon2id passwords, DB sessions (cookie), API/reset/verification tokens, controller helpers, CSRF origin check, `rate_limit`, `GemStack::Policy` |
+| `contract` | contract IR from routes/schemas/serializers → TypeScript types + clients, OpenAPI 3.1 |
+| `dev` | dev gateway, process supervisor, file watcher, background contract regeneration, toolchain detection |
+| `cli` | generators, `add`, `db:*`, `jobs`, `contract`, `doctor` — run by the `gemstack` executable from gemstack-cli |
+| app | `GemStack::Application`: boot, Zeitwerk autoloading, reloading, testing helpers |
 
 ---
 

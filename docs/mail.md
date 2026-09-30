@@ -1,6 +1,6 @@
 # Mail
 
-New apps include `gemstack-mail` and `app/mailers/application_mailer.rb`, the
+New apps load it (`require "gemstack/mail"` in `config/app.rb`) and include `app/mailers/application_mailer.rb`, the
 base class for your mailers (shared `default from:` and helpers). Mailers live
 in `app/mailers`:
 

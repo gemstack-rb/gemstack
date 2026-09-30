@@ -1,0 +1,60 @@
+# frozen_string_literal: true
+
+require "bundler/setup"
+require "gemstack"
+<% if database? -%>
+require "gemstack/db"       # models and migrations — the connection is in config/database.yml
+<% end -%>
+require "gemstack/jobs"     # background jobs (app/jobs)
+require "gemstack/mail"     # mailers (app/mailers)
+# require "gemstack/storage" # file uploads — `gemstack add storage` turns this on
+
+# Sets the application root and loads .env files (development/test).
+GemStack.setup(root: File.expand_path("..", __dir__))
+
+# Require the gems listed in the Gemfile for the current environment.
+Bundler.require(:default, GemStack.env.to_sym)
+
+GemStack.configure do |config|
+  config.name = "<%= name %>"
+
+  # Settings for every environment. Everything below is optional: each line
+  # shows the default — uncomment one to change it. Per-environment settings go
+  # in config/environments/*.rb. All settings: docs/configuration.md.
+
+  # ── HTTP ────────────────────────────────────────────────────────────────
+  # config.http.api_path = "/api"                  # where the API lives (routes are relative to it)
+  # config.http.max_body_size = 10 * 1024 * 1024   # bytes; larger requests get 413
+  # config.http.json = :json                       # or :oj (add gem "oj"), or your own codec
+  # config.http.cors.origins = []                  # only for frontends on another domain
+  # config.http.middleware.use MyMiddleware        # add / insert_before / swap / delete
+
+  # ── Pagination: paginate(...) in controllers, ?page=2&per_page=50 (docs/pagination.md) ──
+  # config.http.pagination.per_page = 25           # records per page when the client doesn't say
+  # config.http.pagination.max_per_page = 100      # the most a client may ask for with ?per_page=
+
+  # ── Responses ───────────────────────────────────────────────────────────
+  # config.http.compression.enabled = true         # gzip/Brotli responses over 1 KB (add gem "brotli" for br)
+  # config.http.etags = true                       # ETag + 304 Not Modified for GET responses
+
+  # ── Logging ─────────────────────────────────────────────────────────────
+  # config.logger.level = :debug                   # :info in production (or GEMSTACK_LOG_LEVEL)
+  # config.filter_parameters += %w[iban]           # masked in logs, next to password, token, secret…
+<% if database? -%>
+
+  # ── Database — the connection is in config/database.yml (DATABASE_URL overrides it) ──
+  # config.db.pool_size = 5                        # default: GEMSTACK_MAX_THREADS (one per Puma thread)
+  # config.db.statement_timeout = 5_000            # ms
+<% end -%>
+
+  # ── Cache (GemStack.cache) ──────────────────────────────────────────────
+  # config.cache.store = :memory                   # :redis to share it between processes (gem "redis-client")
+  # config.cache.default_expires_in = nil          # seconds; nil = until evicted
+
+  # ── Background jobs ─────────────────────────────────────────────────────
+  # config.jobs.default_queue = "default"
+  # config.jobs.default_max_attempts = 10          # then the job is kept as failed
+
+  # ── Mail ────────────────────────────────────────────────────────────────
+  # config.mail.default_from = "<%= name %> <no-reply@localhost>"   # or MAIL_FROM
+end

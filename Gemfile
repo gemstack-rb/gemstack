@@ -6,18 +6,8 @@ source "https://rubygems.org"
 path "gems" do
   gem "gemstack"
   gem "gemstack-auth"
-  gem "gemstack-cache"
   gem "gemstack-cli"
-  gem "gemstack-contract"
-  gem "gemstack-core"
-  gem "gemstack-db"
-  gem "gemstack-dev"
-  gem "gemstack-http"
-  gem "gemstack-jobs"
-  gem "gemstack-mail"
   gem "gemstack-realtime"
-  gem "gemstack-schema"
-  gem "gemstack-storage"
 end
 
 group :development, :test do

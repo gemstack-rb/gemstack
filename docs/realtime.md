@@ -100,7 +100,7 @@ GemStack.broadcast ──▶ broker ──▶ every API process ──▶ Hub �
 
 | Broker | When | Notes |
 |---|---|---|
-| `:postgres` | default with gemstack-db | LISTEN/NOTIFY, transactional, payloads ≤ ~8 KB |
+| `:postgres` | default when the database is PostgreSQL | LISTEN/NOTIFY, transactional, payloads ≤ ~8 KB |
 | `:memory` | no database, single process | after-commit delivery when in a transaction |
 | `:redis` | large payloads / high rates | `gem "redis-client"`, `REDIS_URL` |
 | `:test` | in tests | records broadcasts |

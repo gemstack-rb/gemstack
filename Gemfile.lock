@@ -1,62 +1,24 @@
 PATH
   remote: gems
   specs:
-    gemstack (0.2.5)
-      gemstack-cache (= 0.2.5)
-      gemstack-cli (= 0.2.5)
-      gemstack-contract (= 0.2.5)
-      gemstack-core (= 0.2.5)
-      gemstack-dev (= 0.2.5)
-      gemstack-http (= 0.2.5)
-      gemstack-schema (= 0.2.5)
-      puma (>= 6.4)
-      zeitwerk (~> 2.6)
-    gemstack-auth (0.2.5)
-      argon2 (~> 2.3)
-      gemstack-cache (= 0.2.5)
-      gemstack-core (= 0.2.5)
-      gemstack-db (= 0.2.5)
-      gemstack-http (= 0.2.5)
-      gemstack-mail (= 0.2.5)
-    gemstack-cache (0.2.5)
-      gemstack-core (= 0.2.5)
-    gemstack-cli (0.2.5)
-      gemstack-core (= 0.2.5)
-      gemstack-dev (= 0.2.5)
-      thor (~> 1.3)
-    gemstack-contract (0.2.5)
-      gemstack-core (= 0.2.5)
-      gemstack-http (= 0.2.5)
-      gemstack-schema (= 0.2.5)
-    gemstack-core (0.2.5)
-    gemstack-db (0.2.5)
-      gemstack-core (= 0.2.5)
-      gemstack-schema (= 0.2.5)
-      sequel (~> 5.80)
-    gemstack-dev (0.2.5)
-      gemstack-core (= 0.2.5)
-    gemstack-http (0.2.5)
-      gemstack-core (= 0.2.5)
-      gemstack-schema (= 0.2.5)
-      json (>= 2.10)
-      rack (~> 3.1)
-    gemstack-jobs (0.2.5)
-      gemstack-core (= 0.2.5)
-    gemstack-mail (0.2.5)
-      erubi (~> 1.13)
-      gemstack-core (= 0.2.5)
-      mail (~> 2.9)
-    gemstack-realtime (0.2.5)
-      gemstack-core (= 0.2.5)
-      gemstack-http (= 0.2.5)
-      gemstack-schema (= 0.2.5)
-      nio4r (~> 2.7)
-    gemstack-schema (0.2.5)
+    gemstack (0.3.0)
       bigdecimal (>= 3.1)
-      gemstack-core (= 0.2.5)
-    gemstack-storage (0.2.5)
-      gemstack-core (= 0.2.5)
-      gemstack-http (= 0.2.5)
+      erubi (~> 1.13)
+      gemstack-cli (= 0.3.0)
+      json (>= 2.10)
+      mail (~> 2.9)
+      puma (>= 6.4)
+      rack (~> 3.1)
+      sequel (~> 5.80)
+      thor (~> 1.3)
+      zeitwerk (~> 2.6)
+    gemstack-auth (0.3.0)
+      argon2 (~> 2.3)
+      gemstack (= 0.3.0)
+    gemstack-cli (0.3.0)
+    gemstack-realtime (0.3.0)
+      gemstack (= 0.3.0)
+      nio4r (~> 2.7)
 
 GEM
   remote: https://rubygems.org/
@@ -190,18 +152,8 @@ DEPENDENCIES
   brotli (~> 0.8)
   gemstack!
   gemstack-auth!
-  gemstack-cache!
   gemstack-cli!
-  gemstack-contract!
-  gemstack-core!
-  gemstack-db!
-  gemstack-dev!
-  gemstack-http!
-  gemstack-jobs!
-  gemstack-mail!
   gemstack-realtime!
-  gemstack-schema!
-  gemstack-storage!
   minitest (~> 5.25)
   mysql2 (~> 0.5)
   oj (~> 3.16)

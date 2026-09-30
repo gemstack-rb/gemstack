@@ -7,15 +7,19 @@ short version for application developers.
 
 | Gem | You use it for |
 |---|---|
-| `gemstack-core` | `GemStack.configure`, `GemStack.env`, `GemStack.logger`, errors (`GemStack::NotFound`, ...) |
-| `gemstack-cache` | `GemStack.cache` (memory / null / Redis stores) |
-| `gemstack-schema` | `GemStack::Types`, `GemStack::Schema`, `GemStack::Serializer` |
-| `gemstack-http` | routes, controllers (`accepts`, `input`, `render`), params, middleware, JSON |
-| `gemstack-db` *(optional)* | `GemStack::Model`, migrations, `GemStack.db`, `GemStack.transaction` |
-| `gemstack-contract` | `gemstack contract`: TypeScript types, clients, OpenAPI |
-| `gemstack-dev` | `gemstack dev` (gateway + supervisor) |
-| `gemstack-cli` | the `gemstack` command and generators |
-| `gemstack` | depends on all of the above except `gemstack-db`; boots your app |
+| Module (in the `gemstack` gem) | What you use from it |
+|---|---|
+| `core` | `GemStack.configure`, `GemStack.env`, `GemStack.logger`, errors (`GemStack::NotFound`, ...) |
+| `cache` | `GemStack.cache` (memory / null / Redis stores) |
+| `schema` | `GemStack::Types`, `GemStack::Schema`, `GemStack::Serializer` |
+| `http` | routes, controllers (`accepts`, `input`, `render`), params, middleware, JSON |
+| `db` *(require "gemstack/db")* | `GemStack::Model`, migrations, `GemStack.db`, `GemStack.transaction` |
+| `jobs`, `mail`, `storage` *(require "gemstack/…")* | `GemStack::Job`, `GemStack::Mailer`, `GemStack::Storage` |
+| `contract` | `gemstack contract`: TypeScript types, clients, OpenAPI |
+| `dev` | `gemstack dev` (gateway + supervisor) |
+| `cli` | the `gemstack` command and generators (the executable itself is the gemstack-cli gem) |
+
+Authentication and realtime are the gems `gemstack-auth` and `gemstack-realtime`.
 
 Core has no dependencies and never depends on the other gems. Modules plug
 into core by registering configuration namespaces and boot hooks

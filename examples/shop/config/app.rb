@@ -2,6 +2,8 @@
 
 require "bundler/setup"
 require "gemstack"
+require "gemstack/db"   # models and migrations (PostgreSQL: DATABASE_URL, or shop_<env> on this machine)
+require "gemstack/jobs" # background jobs
 
 # Sets the application root and loads .env files (development/test).
 GemStack.setup(root: File.expand_path("..", __dir__))

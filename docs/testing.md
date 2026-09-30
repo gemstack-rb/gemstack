@@ -41,7 +41,7 @@ end
 
 ## The test database
 
-Apps with `gemstack-db` get this in `test/test_helper.rb`:
+Apps with a database (`require "gemstack/db"`) get this in `test/test_helper.rb`:
 
 ```ruby
 GemStack::DB::Testing.prepare!                                   # create + migrate the TEST_DATABASE_URL database
@@ -77,7 +77,7 @@ creates one per action.
 
 ```bash
 bundle exec rake                 # every gem's suite + RuboCop
-bundle exec rake test:gemstack-dev
+bundle exec rake test:dev
 ```
 
 End-to-end check of the generators — creates an app with every field type and

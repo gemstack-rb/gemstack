@@ -4,7 +4,7 @@ module GemStack
   module Realtime
     module Brokers
       # Fan-out between processes with PostgreSQL LISTEN/NOTIFY (the default
-      # with gemstack-db): a broadcast from a job worker reaches browsers
+      # with gemstack/db): a broadcast from a job worker reaches browsers
       # connected to any API process, with no extra infrastructure.
       #
       # NOTIFY is transactional, so a broadcast inside a transaction is

@@ -1,25 +1,12 @@
 # gemstack-cli
 
-GemStack command-line interface and generators.
+The `gemstack` command. It is installed with the [`gemstack`](https://rubygems.org/gems/gemstack) gem —
+`gem install gemstack` — and its code (generators, development server, `db:*` and `jobs` commands) lives
+there; this gem only provides the executable.
 
-Part of [GemStack](https://github.com/gemstack-rb/gemstack), a modular Ruby API framework for Next.js
-applications by [Adware Technologies](https://www.adwaretech.com). All GemStack gems are developed together in that repository and released with the same
-version.
-
-## Installation
-
-Installed with the `gemstack` gem; you rarely need to add it yourself. The `gs`
-executable is a short alias for `gemstack`, so commands such as `gs db:migrate`
-work the same way.
-
-## Documentation
-
-- [Guide](https://github.com/gemstack-rb/gemstack/blob/main/docs/getting-started.md)
-- [All guides](https://github.com/gemstack-rb/gemstack/tree/main/docs) ·
-  [Architecture](https://github.com/gemstack-rb/gemstack/blob/main/ARCHITECTURE.md)
-
-Source, issues and pull requests: [gemstack-rb/gemstack](https://github.com/gemstack-rb/gemstack)
-(this gem lives in `gems/gemstack-cli`).
+GemStack is a modular Ruby API framework for Next.js applications by
+[Adware Technologies](https://www.adwaretech.com) — [gemstack-rb/gemstack](https://github.com/gemstack-rb/gemstack).
+Command reference: [docs/cli.md](https://github.com/gemstack-rb/gemstack/blob/main/docs/cli.md).
 
 ## License
 

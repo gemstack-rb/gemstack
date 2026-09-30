@@ -5,16 +5,9 @@ source "https://rubygems.org"
 # GemStack from this repository.
 path "../../gems" do
   gem "gemstack"
-  gem "gemstack-cli"
-  gem "gemstack-contract"
-  gem "gemstack-core"
-  gem "gemstack-db"
-  gem "gemstack-dev"
-  gem "gemstack-http"
-  gem "gemstack-jobs"
   gem "gemstack-realtime"
-  gem "gemstack-schema"
 end
+gem "pg", "~> 1.5" # the PostgreSQL driver
 gem "puma", ">= 6.4"
 
 # Any gem works here as usual, e.g.:

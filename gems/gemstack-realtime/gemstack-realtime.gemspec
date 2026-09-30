@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # All GemStack gems share one version; change it with `rake version:set[x.y.z]`.
-version = "0.2.5"
+version = "0.3.0"
 
 Gem::Specification.new do |spec|
   spec.name = "gemstack-realtime"
@@ -20,10 +20,8 @@ Gem::Specification.new do |spec|
   spec.metadata["bug_tracker_uri"] = "https://github.com/gemstack-rb/gemstack/issues"
   spec.metadata["documentation_uri"] = "https://github.com/gemstack-rb/gemstack/tree/main/docs"
 
-  spec.add_dependency "gemstack-core", version
-  spec.add_dependency "gemstack-http", version
-  spec.add_dependency "gemstack-schema", version
   # The event loop that serves long-lived connections off the server's request
   # threads (the same library Puma uses).
+  spec.add_dependency "gemstack", version
   spec.add_dependency "nio4r", "~> 2.7"
 end

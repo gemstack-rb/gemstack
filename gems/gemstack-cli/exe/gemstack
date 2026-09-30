@@ -1,6 +1,13 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-require "gemstack/cli"
+# The `gemstack` command. Its code lives in the gemstack gem (lib/gemstack/cli);
+# this gem only owns the executable, so installs from before 0.3.0 upgrade
+# without an executable conflict.
+begin
+  require "gemstack/cli"
+rescue LoadError
+  abort "gemstack: the gemstack gem is missing — install it with: gem install gemstack"
+end
 
 GemStack::CLI.start(ARGV)

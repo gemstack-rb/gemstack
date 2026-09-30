@@ -1,0 +1,104 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Maps the files a branch changes to the GemStack modules (and test suites)
+# they belong to.
+#
+#   script/changes            # the suites to run for this branch: "http db"
+#   script/changes --check    # fail if a module's code changed without a test change in that module
+#
+# Changes are compared with GEMSTACK_BASE (default origin/main, or main), plus
+# uncommitted and untracked files. `rake test:changed` runs the suites; CI runs
+# --check on every pull request.
+require "open3"
+
+module GemStackChanges
+  ROOT = File.expand_path("..", __dir__)
+  # Loose files in gems/gemstack/lib/gemstack/ that belong to a module.
+  LOOSE = {
+    "core" => %w[settings environment logger errors error_mapping inflector plugins dotenv version],
+    "schema" => %w[serializer types], "jobs" => %w[job],
+    "app" => %w[application interlock reloader testing]
+  }.freeze
+  # Changes to these can affect every suite.
+  EVERYTHING = [/\AGemfile/, /\ARakefile\z/, /\.gemspec\z/, %r{\Agems/gemstack/lib/gemstack/core\.rb\z}].freeze
+
+  module_function
+
+  def git(*)
+    out, status = Open3.capture2("git", *, chdir: ROOT)
+    status.success? ? out.lines(chomp: true) : nil
+  end
+
+  def base
+    ENV.fetch("GEMSTACK_BASE") { git("rev-parse", "--verify", "--quiet", "origin/main") ? "origin/main" : "main" }
+  end
+
+  def changed_files
+    committed = git("diff", "--name-only", "#{base}...HEAD") or abort "can't compare with #{base} (git fetch it first)"
+    (committed + git("diff", "--name-only", "HEAD") + git("ls-files", "--others", "--exclude-standard")).uniq
+  end
+
+  # Where each module's code and tests live: [pattern, :code or :test, module].
+  # A nil module means the name the pattern captured.
+  PATHS = [
+    [%r{\Agems/gemstack/test/([a-z]+)/}, :test],
+    [%r{\Agems/gemstack-(auth|realtime)/test/}, :test],
+    [%r{\Agems/gemstack-(auth|realtime)/lib/}, :code],
+    [%r{\Agems/gemstack-cli/exe/}, :code, "cli"],
+    [%r{\Agems/gemstack/templates/}, :code, "cli"],
+    [%r{\Agems/gemstack/lib/gemstack\.rb\z}, :code, "app"],
+    [%r{\Agems/gemstack/lib/gemstack/([a-z_]+)}, :code]
+  ].freeze
+
+  # [:code or :test, module] for a file inside a module, nil otherwise.
+  def classify(path)
+    PATHS.each do |pattern, kind, mod|
+      next unless (match = pattern.match(path))
+
+      name = mod || match[1]
+      return [kind, LOOSE.find { |_, names| names.include?(name) }&.first || name]
+    end
+    nil
+  end
+
+  # The test suites to run for these files; :all when a shared file changed.
+  def suites(files)
+    return :all if files.any? { |file| EVERYTHING.any? { |pattern| pattern.match?(file) } }
+
+    files.filter_map { |file| classify(file)&.last }.uniq.sort
+  end
+
+  # Modules whose code changed without any change to their tests.
+  def untested(files)
+    pairs = files.filter_map { |file| classify(file) }
+    modules = ->(kind) { pairs.filter_map { |k, mod| mod if k == kind } }
+    (modules[:code] - modules[:test]).uniq.sort
+  end
+end
+
+if $PROGRAM_NAME == __FILE__
+  files = GemStackChanges.changed_files
+  if ARGV.first == "--check"
+    missing = GemStackChanges.untested(files)
+    if missing.empty?
+      puts "✓ every changed module has test changes"
+    else
+      puts "✗ code changed without tests in: #{missing.join(", ")}"
+      puts
+      missing.each do |mod|
+        changed = files.select { |file| GemStackChanges.classify(file) == [:code, mod] }
+        puts "  #{mod}: #{changed.join(", ")}"
+      end
+      puts
+      puts "Add or update tests for these changes (see CONTRIBUTING.md → Tests). Start a test file with:"
+      puts "  bundle exec rake \"test:new[#{missing.first},name_of_the_feature]\""
+      puts "If the change really needs no tests (a pure refactor, comments), a maintainer can add the"
+      puts "no-tests-needed label to the pull request."
+      exit 1
+    end
+  else
+    suites = GemStackChanges.suites(files)
+    puts suites == :all ? "all" : suites.join(" ")
+  end
+end

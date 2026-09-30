@@ -33,7 +33,7 @@ module GemStack
   #   class ApplicationController < GemStack::Controller
   Controller = HTTP::Controller
   Params = HTTP::Params
-  # GemStack::Schema, GemStack::Serializer and GemStack::Types come from gemstack-schema.
+  # GemStack::Schema, GemStack::Serializer and GemStack::Types come from gemstack/schema.
 
   class << self
     def application

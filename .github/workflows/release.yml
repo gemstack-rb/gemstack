@@ -1,0 +1,76 @@
+# Publishes a release when a version tag is pushed:
+#
+#   bundle exec rake version:set[0.3.1]   # + a "## 0.3.1" section in CHANGELOG.md
+#   git commit -am "Release 0.3.1" && git push
+#   git tag v0.3.1 && git push origin v0.3.1
+#
+# Gems are pushed with rubygems.org trusted publishing (no API key or MFA code
+# is stored anywhere). Each gem must have gemstack-rb/gemstack, this workflow
+# and the "release" environment registered as a trusted publisher on
+# rubygems.org. The "release" environment should require an approval, so
+# nothing is published until a maintainer approves the run.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write   # the GitHub release
+  id-token: write   # trusted publishing to rubygems.org
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+      - name: Database client libraries (pg, mysql2)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libpq-dev default-libmysqlclient-dev
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+          bundler-cache: true
+
+      - name: The tag matches the version and the changelog
+        run: |
+          version=$(ruby -e 'require "./gems/gemstack/lib/gemstack/version"; print GemStack::VERSION')
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME but the code is $version"; exit 1; }
+          grep -q "^## $version" CHANGELOG.md || { echo "CHANGELOG.md has no '## $version' section"; exit 1; }
+
+      - name: Nothing that looks like a secret or data file is tracked
+        run: |
+          if git ls-files | grep -iE '(^|/)\.env($|\.[^e])|\.pem$|\.key$|(^|/)(secrets?|credentials?)(\.[a-z]+)?$|_secret$|\.sql$|\.csv$|\.log$'; then
+            echo "files above may hold secrets or data — remove them before releasing"; exit 1
+          fi
+
+      - name: Tests (SQLite) and build
+        run: |
+          bundle exec rake test test:databases
+          bundle exec rake gems:check
+
+      - name: Which gems still need publishing
+        id: pending
+        run: |
+          script/gems | while read -r gem version; do
+            curl -fsS -o /dev/null "https://rubygems.org/api/v2/rubygems/$gem/versions/$version.json" 2>/dev/null \
+              || echo "$gem $version"
+          done > pending.txt
+          cat pending.txt
+          echo "any=$([ -s pending.txt ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - uses: rubygems/configure-rubygems-credentials@v1.0.0
+        if: steps.pending.outputs.any == 'true'
+
+      - name: Publish to rubygems.org
+        if: steps.pending.outputs.any == 'true'
+        run: |
+          while read -r gem version; do gem push "pkg/$gem-$version.gem"; done < pending.txt
+
+      - name: GitHub release with the changelog section
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          ruby -e 'v = ARGV[0]; s = File.read("CHANGELOG.md"); puts s[/^## #{Regexp.escape(v)}\n(.*?)(?=^## |\z)/m, 1].to_s.strip' "$version" > notes.md
+          gh release create "$GITHUB_REF_NAME" --title "GemStack $version" --notes-file notes.md

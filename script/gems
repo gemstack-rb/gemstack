@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Prints the GemStack gems in dependency order (INSTALL_ORDER in the Rakefile).
+# Prints the gems to release, in order, as "name version": gemstack-cli,
+# gemstack, gemstack-auth, gemstack-realtime.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-ruby -e 'puts File.read("Rakefile")[/INSTALL_ORDER = %w\[(.*?)\]/m, 1].split'
+ruby -e '
+  names = File.read("Rakefile")[/^GEMS = %w\[(.*?)\]/m, 1].split
+  names.each { |name| puts "#{name} #{Gem::Specification.load("gems/#{name}/#{name}.gemspec").version}" }
+'

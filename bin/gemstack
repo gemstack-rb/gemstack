@@ -1,8 +1,10 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Runs the GemStack CLI straight from this checkout (before the gems are
-# published). Put this directory's bin/ on your PATH, or alias it:
+# Runs the GemStack CLI straight from this checkout. Put this directory's
+# bin/ on your PATH, or alias it:
 #   alias gemstack="$HOME/path/to/gemstack/bin/gemstack"
-Dir[File.expand_path("../gems/*/lib", __dir__)].each { |lib| $LOAD_PATH.unshift(lib) }
+%w[gemstack gemstack-auth gemstack-realtime].each do |gem|
+  $LOAD_PATH.unshift(File.expand_path("../gems/#{gem}/lib", __dir__))
+end
 load File.expand_path("../gems/gemstack-cli/exe/gemstack", __dir__)

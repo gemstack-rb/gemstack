@@ -105,15 +105,27 @@ server database ([databases](docs/database.md)).
 
 ```bash
 gem install gemstack
-gemstack new shop                  # Gemfile: gem "gemstack", "~> 0.2.5"
+gemstack new shop                  # Gemfile: gem "gemstack", "~> 0.3.0"
 ```
 
-The `gemstack` gem is the framework: it brings every module an app needs
-(`gemstack-core`, `-cache`, `-schema`, `-http`, `-contract`, `-dev`, `-cli`).
-Optional modules are separate gems added per app — `gemstack-db` and
-`gemstack-jobs` by `gemstack new`, `gemstack-realtime`, `-auth`, `-mail` and
-`-storage` by `gemstack add …`. All of them are released together with one
-version.
+One gem is the framework: routing, controllers, models, background jobs, mail,
+file storage, the TypeScript contract, generators and the dev server. An app
+switches modules on in `config/app.rb`, the way a Rails app does in
+`application.rb`:
+
+```ruby
+require "gemstack"
+require "gemstack/db"       # models and migrations (config/database.yml)
+require "gemstack/jobs"     # background jobs
+require "gemstack/mail"     # mailers
+# require "gemstack/storage" # file uploads — gemstack add storage
+```
+
+Authentication (`gemstack-auth`) and realtime (`gemstack-realtime`) are
+separate gems because they compile native extensions; `gemstack add auth` and
+`gemstack add realtime` add them. `gemstack-cli` only holds the `gemstack`
+executable and comes with `gemstack`. All gems are released together, with
+one version.
 
 **Hacking on GemStack itself?** Clone this repository (every gem lives in
 `gems/` and is published from here). `bin/gemstack` runs
@@ -127,32 +139,35 @@ See [`examples/shop`](examples/shop) for a complete example application.
 
 ```text
 gems/
-  gemstack-core/     config, env, logger, errors, error mapping, inflector, plugins — zero dependencies
-  gemstack-cache/    GemStack.cache: memory, null and Redis stores
-  gemstack-schema/   shared types, request schemas, serializers
-  gemstack-http/     router, middleware, controllers, params, JSON (Rack 3)
-  gemstack-db/       SQLite/PostgreSQL/MySQL via Sequel: models, migrations, db tasks (optional)
-  gemstack-jobs/     background jobs: database queue, adapters, worker
-  gemstack-realtime/ GemStack.broadcast → Server-Sent Events (optional: gemstack add realtime)
-  gemstack-mail/     mailers, ERB templates, SMTP/log/test delivery, deliver_later
-  gemstack-storage/  disk and S3 storage, signed URLs, direct uploads (optional: gemstack add storage)
-  gemstack-auth/     Argon2id passwords, sessions, API tokens, policies (optional: gemstack add auth)
-  gemstack-contract/ TypeScript types, API clients, OpenAPI from the backend
-  gemstack-dev/    dev gateway, process supervisor, file watcher
-  gemstack-cli/    `gemstack` command, generators, templates
-  gemstack/        umbrella: Application, autoloading, reloading, test helpers
-docs/              guides
-benchmarks/        performance measurements
-ARCHITECTURE.md    how GemStack is put together · CHANGELOG.md releases
+  gemstack/          the framework gem
+    lib/gemstack/    one directory per module: core, cache, schema, http, db, jobs, mail,
+                     storage, contract, dev, cli (+ Application, reloading, test helpers)
+    templates/       what the generators write
+    test/<module>/   the tests of each module
+  gemstack-cli/      the `gemstack` executable
+  gemstack-auth/     authentication and policies (argon2)
+  gemstack-realtime/ Server-Sent Events (nio4r)
+docs/                guides
+benchmarks/          performance measurements
+examples/shop/       an example application
+ARCHITECTURE.md      how GemStack is put together · CHANGELOG.md releases
 ```
 
 ## Developing GemStack
 
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for setup, where tests go and how
+pull requests are checked. Report vulnerabilities privately: [SECURITY.md](SECURITY.md).
+
 ```bash
 bundle install
 bundle exec rake          # all tests + RuboCop
-bundle exec rake test:gemstack-http
-GEMSTACK_TEST_DATABASE_URL=postgres://user:pass@localhost/gemstack_test bundle exec rake test:gemstack-db
+bundle exec rake test:http             # one module (test:db, test:cli, test:auth, …)
+bundle exec rake test:changed          # the modules your branch changes
+bundle exec rake "test:new[http,rate_limiting]"   # start a test file in a module
+GEMSTACK_TEST_DATABASE_URL=postgres://user:pass@localhost/gemstack_test bundle exec rake test:db
+bundle exec rake test:databases        # db, jobs and auth on SQLite (+ PostgreSQL/MySQL when configured)
+script/ruby-matrix                     # the suite on Ruby 3.3, 3.4 and 4.0 (Docker)
+script/e2e                             # generate a full app and run its tests, TypeScript and next build
 bundle exec rake bench
 ```
 

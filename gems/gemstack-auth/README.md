@@ -11,7 +11,7 @@ version.
 Optional module — `gemstack add auth`:
 
 ```ruby
-gem "gemstack-auth", "~> 0.1"
+gem "gemstack-auth", "~> 0.3.0"
 ```
 
 ## Documentation

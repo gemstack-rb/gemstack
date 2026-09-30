@@ -77,7 +77,7 @@ Replace it entirely with `GemStack.logger = MyLogger.new` (it must respond to
 | `config.http.etags` | `true` (Rack::ETag + Rack::ConditionalGet) |
 | `config.http.pagination.per_page` / `max_per_page` | `25` / `100` — see [pagination](pagination.md) |
 
-### Cache (`gemstack-cache`)
+### Cache
 
 | Setting | Default |
 |---|---|
@@ -87,7 +87,7 @@ Replace it entirely with `GemStack.logger = MyLogger.new` (it must respond to
 | `config.cache.max_entries` | `10_000` (memory store) |
 | `config.cache.redis_url` / `redis_pool_size` | `REDIS_URL` / `GEMSTACK_MAX_THREADS` |
 
-### Jobs (`gemstack-jobs`)
+### Jobs
 
 See [background jobs](background-jobs.md#configuration): `config.jobs.adapter`,
 `queues`, `concurrency`, `default_queue`, `default_priority`,
@@ -146,13 +146,13 @@ Default order: `RequestId`, `RequestLogger`, `Compression`, `ErrorHandler`,
 | `config.dev.frontend_command` | the frontend's `next dev` |
 | `config.dev.restart_on` | `config/**/*.rb`, `Gemfile.lock`, `.env*` (except `config/routes.rb`, which reloads in-process) |
 
-### Database (`gemstack-db`)
+### Database
 
 See [models](models.md#configuration): `config.db.url`, `pool_size`,
 `pool_timeout`, `statement_timeout`, `slow_query_ms`, `log_queries`,
 `migrations_path`, `seeds_path`, `extensions`, `options`.
 
-### Contract (`gemstack-contract`)
+### Contract
 
 | Setting | Default |
 |---|---|

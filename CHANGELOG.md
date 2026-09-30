@@ -2,6 +2,41 @@
 
 All GemStack gems are released together with one version.
 
+## 0.3.0
+
+**GemStack is now one gem.** The framework — core, cache, schema, http, db, jobs, mail, storage, contract,
+dev and the CLI — is the `gemstack` gem. Authentication (`gemstack-auth`) and realtime
+(`gemstack-realtime`) stay separate gems because of their native extensions; `gemstack-cli` only holds the
+`gemstack` executable and is installed with `gemstack`. Library code, `require` paths and class names are
+unchanged.
+
+- Apps switch modules on in `config/app.rb` (`require "gemstack/db"`, `"gemstack/jobs"`, `"gemstack/mail"`,
+  `"gemstack/storage"`) instead of listing a gem per module; `gemstack new` and `gemstack add` write the lines
+- `gemstack doctor` says what to change in apps from before 0.3
+- The ten merged gem names get a last 0.3.0 release: a shim that depends on `gemstack` and loads its
+  module, so existing Gemfiles keep working
+- Releases publish four gems instead of fourteen
+
+### Upgrading from 0.2
+
+1. In the Gemfile, change the GemStack versions to `"~> 0.3.0"` and run `bundle update gemstack`. The app
+   works as before: the old gem names now point to `gemstack`.
+2. Finish the move — `gemstack doctor` lists exactly what applies to your app:
+   - remove the lines for `gemstack-db`, `gemstack-jobs`, `gemstack-mail`, `gemstack-storage` (and any
+     other `gemstack-*` except `gemstack-auth` and `gemstack-realtime`) from the Gemfile;
+   - add the matching lines to `config/app.rb`, after `require "gemstack"`:
+
+     ```ruby
+     require "gemstack/db"
+     require "gemstack/jobs"
+     require "gemstack/mail"
+     require "gemstack/storage"   # if you used gemstack add storage
+     ```
+
+   - run `bundle install`.
+
+`bin/gemstack` doesn't need changes.
+
 ## 0.2.5
 
 - Documentation: removed the internal planning documents (roadmap, decision log, release checklist)
