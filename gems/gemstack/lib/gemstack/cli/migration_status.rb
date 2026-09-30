@@ -33,11 +33,25 @@ module GemStack
       def applied
         return unless File.file?(File.join(@root, "config/app.rb"))
 
+        bundle_path = ENV["BUNDLE_PATH"] || Bundler.settings[:path]&.to_s if defined?(Bundler)
+
         run = lambda do
-          Open3.capture3({ "BUNDLE_GEMFILE" => File.join(@root, "Gemfile"), "BUNDLE_FROZEN" => "true",
-                           "GEMSTACK_ENV" => @environment },
-                         "bundle", "exec", "ruby", "-e", PROBE, chdir: @root)
+          Open3.capture3(
+            {
+              "BUNDLE_GEMFILE" => File.join(@root, "Gemfile"),
+              "BUNDLE_PATH" => bundle_path,
+              "BUNDLE_FROZEN" => "true",
+              "GEMSTACK_ENV" => @environment
+            }.compact,
+            "bundle",
+            "exec",
+            "ruby",
+            "-e",
+            PROBE,
+            chdir: @root
+          )
         end
+
         output, _, status = defined?(Bundler) ? Bundler.with_unbundled_env(&run) : run.call
         return unless status.success?
 
