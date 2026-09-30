@@ -46,6 +46,7 @@ class DestroyMigrationTest < Minitest::Test
 
   def setup
     super
+
     gems = File.expand_path("../../..", __dir__)
     sqlite3_version = Gem.loaded_specs.fetch("sqlite3").version.to_s
 
@@ -56,12 +57,13 @@ class DestroyMigrationTest < Minitest::Test
         gem "gemstack"
       end
 
-      gem "sqlite3", #{sqlite3_version.inspect}
+      gem "sqlite3", "= #{sqlite3_version}"
     RUBY
 
     write("config/app.rb", <<~RUBY)
       require "bundler/setup"
       require "gemstack/db"
+
       GemStack.setup(root: File.expand_path("..", __dir__))
       GemStack.config.db.log_queries = false
     RUBY
@@ -75,7 +77,7 @@ class DestroyMigrationTest < Minitest::Test
         database: db/test.sqlite3
     YAML
 
-    # Offline fixtures cannot fetch checksums for Ruby's bundled gems.
+    # Offline fixtures must resolve gems from the parent bundle.
     output, error, status = in_app(
       "env",
       "BUNDLE_LOCKFILE_CHECKSUMS=false",
@@ -88,10 +90,22 @@ class DestroyMigrationTest < Minitest::Test
   end
 
   def in_app(*command, environment: "development")
+    bundle_path = ENV["BUNDLE_PATH"] || Bundler.settings[:path]&.to_s if defined?(Bundler)
+
     run = lambda do
-      Open3.capture3({ "BUNDLE_GEMFILE" => "#{@root}/Gemfile", "GEMSTACK_ENV" => environment,
-                       "DATABASE_URL" => nil, "TEST_DATABASE_URL" => nil }, *command, chdir: @root)
+      Open3.capture3(
+        {
+          "BUNDLE_GEMFILE" => "#{@root}/Gemfile",
+          "BUNDLE_PATH" => bundle_path,
+          "GEMSTACK_ENV" => environment,
+          "DATABASE_URL" => nil,
+          "TEST_DATABASE_URL" => nil
+        }.compact,
+        *command,
+        chdir: @root
+      )
     end
+
     defined?(Bundler) ? Bundler.with_unbundled_env(&run) : run.call
   end
 
