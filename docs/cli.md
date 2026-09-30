@@ -1,13 +1,9 @@
 # Command reference
 
 Every command runs inside an application folder (the one with `config/app.rb`),
-<<<<<<< HEAD
 except `gemstack new`. `gsk` is a shorter executable alias for `gemstack`; all
 commands work with either name. `gemstack help COMMAND` shows all options. `g`
-is short for `generate`.
-=======
-except `gemstack new`. `gemstack help COMMAND` shows all options. `g` is short
-for `generate`; `d` is short for `destroy`.
+is short for `generate`; `d` is short for `destroy`.
 
 ## Remove generated code
 
@@ -47,7 +43,6 @@ Regenerating a resource reuses an existing `*_create_<table>.rb` migration inste
 duplicate. For example, generate → migrate → destroy → generate → migrate preserves the original
 table and data. New or changed fields need a separate schema migration; regeneration does not change
 the retained migration. If a later migration dropped the table, write a new migration to recreate it.
->>>>>>> 431ed0a (Add safe destroy command for generated resources)
 
 ## Create and run
 
