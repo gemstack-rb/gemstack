@@ -4,4 +4,4 @@
 # Runs the GemStack CLI from this application's bundle.
 ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
 require "bundler/setup"
-load Gem.bin_path("gemstack-cli", "gs")
+load Gem.bin_path("gemstack-cli", "gsk")

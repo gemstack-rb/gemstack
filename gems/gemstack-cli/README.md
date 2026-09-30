@@ -1,6 +1,6 @@
 # gemstack-cli
 
-The `gemstack` command and its short alias, `gs`. Both are installed with the
+The `gemstack` command and its short alias, `gsk`. Both are installed with the
 [`gemstack`](https://rubygems.org/gems/gemstack) gem — `gem install gemstack` — and run the same CLI.
 Its code (generators, development server, `db:*` and `jobs` commands) lives in that gem; this gem provides
 the executable launchers.

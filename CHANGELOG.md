@@ -4,7 +4,7 @@ All GemStack gems are released together with one version.
 
 ## Unreleased
 
-- Add the `gs` executable alias, including app-local binstubs and matching help output.
+- Add the `gsk` executable alias, including app-local binstubs and matching help output.
 
 ## 0.3.0
 

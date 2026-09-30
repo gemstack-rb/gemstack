@@ -1,6 +1,4 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-require "gemstack/cli"
-
-GemStack::CLI.start(ARGV)
+load File.expand_path("gemstack", __dir__)

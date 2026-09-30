@@ -18,13 +18,13 @@ class CLIExecutablesTest < Minitest::Test
     help = help_for("gemstack")
 
     assert_includes help, "  gemstack dev"
-    refute_includes help, "  gs dev"
+    refute_includes help, "  gsk dev"
   end
 
   def test_gs_help_uses_the_short_executable_name
-    help = help_for("gs")
+    help = help_for("gsk")
 
-    assert_includes help, "  gs dev"
+    assert_includes help, "  gsk dev"
     refute_includes help, "  gemstack dev"
   end
 end

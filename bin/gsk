@@ -4,4 +4,4 @@
 # Runs the GemStack CLI straight from this checkout (before the gems are
 # published). Put this directory's bin/ on your PATH.
 Dir[File.expand_path("../gems/*/lib", __dir__)].each { |lib| $LOAD_PATH.unshift(lib) }
-load File.expand_path("../gems/gemstack-cli/exe/gs", __dir__)
+load File.expand_path("../gems/gemstack-cli/exe/gsk", __dir__)

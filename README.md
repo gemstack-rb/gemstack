@@ -10,7 +10,7 @@ IDs, structured logs, body limits, JSON errors) and no plumbing to wire.
 ```bash
 gemstack new shop
 cd shop
-gs dev                # → http://localhost:3000 (or `gemstack dev`)
+gsk dev                # → http://localhost:3000 (or `gemstack dev`)
 ```
 
 ```text
@@ -123,12 +123,12 @@ require "gemstack/mail"     # mailers
 
 Authentication (`gemstack-auth`) and realtime (`gemstack-realtime`) are
 separate gems because they compile native extensions; `gemstack add auth` and
-`gemstack add realtime` add them. `gemstack-cli` holds the `gemstack` and `gs`
+`gemstack add realtime` add them. `gemstack-cli` holds the `gemstack` and `gsk`
 executable launchers and comes with `gemstack`. All gems are released together, with
 one version.
 
 **Hacking on GemStack itself?** Clone this repository (every gem lives in
-`gems/` and is published from here). `bin/gemstack` and `bin/gs` run
+`gems/` and is published from here). `bin/gemstack` and `bin/gsk` run
 the CLI straight from the checkout, and apps it creates point their Gemfile at
 the checkout (`path "…/gems"`), so framework changes apply immediately.
 `bundle exec rake gems:install` installs the checkout's gems as if released.
