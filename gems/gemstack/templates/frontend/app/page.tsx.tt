@@ -162,22 +162,14 @@ function Command({ text }: { text: string }) {
 function GemLogo({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 64 64" role="img" aria-label="GemStack">
-      <defs>
-        <linearGradient id="gemstack-gem" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#ff5f8f" />
-          <stop offset="0.55" stopColor="#e11d48" />
-          <stop offset="1" stopColor="#7c3aed" />
-        </linearGradient>
-      </defs>
-      <path d="M18 8h28l12 15-26 34L6 23z" fill="url(#gemstack-gem)" />
-      <path
-        d="M6 23h52M18 8l7 15 7-15 7 15 7-15M25 23l7 34 7-34"
-        fill="none"
-        stroke="rgba(255,255,255,0.55)"
-        strokeWidth="1.4"
-        strokeLinejoin="round"
-      />
-      <path d="M18 8h28l-7 15H25z" fill="rgba(255,255,255,0.18)" />
+      <path d="M8 20 22 6l4 14z" fill="#e11d48" />
+      <path d="M22 6h20l-4 14H26z" fill="#fb5a78" />
+      <path d="M42 6l14 14H38z" fill="#be123c" />
+      <path d="M8 20h18l6 20z" fill="#9f1239" />
+      <path d="M26 20h12l-6 20z" fill="#e11d48" />
+      <path d="M38 20h18L32 40z" fill="#881337" />
+      <rect className={styles.stackTop} x="10" y="44" width="44" height="7" rx="3" />
+      <rect className={styles.stackBottom} x="5" y="55" width="54" height="7" rx="3" />
     </svg>
   );
 }

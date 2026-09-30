@@ -105,6 +105,86 @@ GemStack.transaction { order.save; payment.save }   # nested calls become savepo
 Queries are always parameterised; build conditions with hashes or Sequel's
 expression DSL, and escape user input for `LIKE` with `GemStack.db.dataset.escape_like`.
 
+## Associations and eager loading
+
+```ruby
+class Product < ApplicationModel
+  belongs_to :category          # many_to_one
+  has_many :reviews             # one_to_many
+  has_one :inventory            # one_to_one
+  many_to_many :tags            # through the products_tags join table (Rails' has_many :through)
+end
+
+product.category                # loaded on first access, then cached
+product.reviews_dataset.where(stars: 5).count   # the association as a query
+product.add_tag(tag)            # many_to_many: add_tag, remove_tag, remove_all_tags
+```
+
+Loading an association inside a loop runs one query per record (N+1).
+Load it up front instead. The Sequel method names differ from Rails:
+
+| Rails | GemStack (Sequel) | SQL |
+|---|---|---|
+| `includes(:category)` / `preload` | `Product.eager(:category)` | one extra query per association |
+| `includes(reviews: :author)` | `Product.eager(:category, reviews: :author)` | nested, one query per level |
+| `eager_load(:category)` | `Product.eager_graph(:category)` | one query with a `LEFT JOIN` |
+| `joins(:category)` | `Product.association_join(:category)` | `INNER JOIN`; associations are not loaded |
+| `joins("…")` | `Product.join(:categories, id: :category_id)` | any join |
+| `where(category: category)` | `Product.where(category: category)` | no join needed |
+
+```ruby
+# includes: 3 queries for any number of products
+Product.eager(:category, :reviews).all
+
+# joins: filter on the joined table (Sequel[:category] is the table alias)
+Product.association_join(:category)
+       .where(Sequel[:category][:name] => "Lamps")
+       .select_all(:products)
+
+# eager_load: a single query, and product.category is filled in
+Product.eager_graph(:category).where(Sequel[:category][:name] => "Lamps").all
+
+# products with a 5-star review, as a subquery
+Product.where(id: Review.where(stars: 5).select(:product_id))
+```
+
+In a controller, eager-load whatever the serializer nests. `eager` works with
+[pagination](pagination.md):
+
+```ruby
+def index
+  render paginate(Product.eager(:category, :reviews).order(:id))
+end
+# ProductSerializer: attribute :category, CategorySerializer
+#                    attribute :reviews, [ReviewSerializer]
+```
+
+> **Use `eager`, not `eager_graph`, with `paginate`, `limit` or `count` on
+> `has_many` / `many_to_many` associations.** `eager_graph` joins the tables,
+> so each product appears once per review: `limit(20)` returns fewer than 20
+> products and `count` counts reviews. `eager_graph` is fine for `belongs_to`
+> and `has_one`.
+
+### Catching N+1 queries
+
+Two Sequel plugins help. Add them in `app/models/application_model.rb`:
+
+```ruby
+class ApplicationModel
+  # Loads an association for every record from the same query the first time
+  # one of them accesses it: Product.all.each { _1.category } runs 2 queries, not N+1.
+  plugin :tactical_eager_loading
+
+  # In tests, raise instead of lazily loading an association inside a loop,
+  # so a missing eager(...) fails the test. Single records (find, first) still load.
+  plugin :forbid_lazy_load if GemStack.env.test?
+end
+```
+
+Everything else is in Sequel's
+[association basics](https://sequel.jeremyevans.net/rdoc/files/doc/association_basics_rdoc.html)
+guide (options such as `class:`, `key:`, `order:`, and `many_through_many`).
+
 ## Errors
 
 Database errors become the standard envelope automatically:

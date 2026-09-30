@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo/gemstack-logo-dark.svg">
+    <img src="docs/assets/logo/gemstack-logo.svg" alt="GemStack" width="320">
+  </picture>
+</p>
+
 # GemStack
 
 **A fast, modular Ruby API framework for Next.js applications** — by [Adware Technologies](https://www.adwaretech.com).
