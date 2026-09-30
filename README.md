@@ -112,7 +112,7 @@ server database ([databases](docs/database.md)).
 
 ```bash
 gem install gemstack
-gemstack new shop                  # Gemfile: gem "gemstack", "~> 0.3.2"
+gemstack new shop                  # Gemfile: gem "gemstack", "~> 0.3.3"
 ```
 
 One gem is the framework: routing, controllers, models, background jobs, mail,

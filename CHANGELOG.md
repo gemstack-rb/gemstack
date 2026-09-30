@@ -2,10 +2,10 @@
 
 All GemStack gems are released together with one version.
 
-## Unreleased
-- Add `reload!` to the console to reload application code without restarting the console.
+## 0.3.3
 
 - Add the `gsk` executable alias, including app-local binstubs and matching help output.
+- Add `reload!` to the console to reload application code without restarting the console.
 
 ## 0.3.2
 
