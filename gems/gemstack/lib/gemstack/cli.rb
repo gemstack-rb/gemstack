@@ -6,6 +6,7 @@ require "gemstack/core"
 module GemStack
   # The `gemstack` command.
   class CLI < Thor
+    require_relative "cli/add_next_steps"
     require_relative "cli/project"
     require_relative "cli/generator"
     require_relative "cli/generation_manifest"
@@ -210,16 +211,8 @@ module GemStack
       AddGenerator.new(feature, root: root, install: !options[:skip_install]).run
       refresh_contract(root) if %w[auth
                                    storage].include?(feature) && !options[:skip_install] && !options[:skip_contract]
-      say("\n#{ADD_NEXT_STEPS.fetch(feature)}")
+      say("\n#{AddNextSteps::STEPS.fetch(feature)}")
     end
-
-    ADD_NEXT_STEPS = {
-      "realtime" => "Next: declare channels in config/channels.rb, then GemStack.broadcast(...) — see docs/realtime.md",
-      "auth" => "Next: gemstack db:migrate · open http://localhost:3000/signup · " \
-                "`before :require_login` in controllers — see docs/authentication.md",
-      "storage" => "Next: uploadFile(file) from frontend/lib/upload.ts · production: STORAGE_SERVICE=s3, S3_BUCKET " \
-                   "— see docs/storage.md"
-    }.freeze
 
     desc "doctor", "Check that this app can run (Ruby, Node, database, migrations, contract…) and how to fix it"
     long_desc <<~DESC
