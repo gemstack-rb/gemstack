@@ -20,8 +20,8 @@ bundle install
 bundle exec rake                                  # every test suite + RuboCop — should pass before you start
 ```
 
-`bin/gemstack` runs the CLI from your checkout, so `bin/gemstack new /tmp/demo` shows your changes in
-a real app.
+`bin/gemstack` and `bin/gs` run the CLI from your checkout, so either launcher can create a real app
+with your changes.
 
 ## How the code is organised
 
@@ -30,7 +30,7 @@ a real app.
 | `gems/gemstack/lib/gemstack/<module>/` | The framework, split into modules: `core`, `cache`, `schema`, `http`, `db`, `jobs`, `mail`, `storage`, `contract`, `dev`, `cli` |
 | `gems/gemstack/templates/` | The files `gemstack new` and the generators create (part of `cli`) |
 | `gems/gemstack-auth/`, `gems/gemstack-realtime/` | The two optional gems |
-| `gems/gemstack-cli/` | Only the `gemstack` executable |
+| `gems/gemstack-cli/` | The `gemstack` and `gs` executable launchers |
 | `gems/gemstack/test/<module>/`, `gems/*/test/` | One test suite per module |
 | `docs/` | The user documentation |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | How the modules fit together, and the rules below |

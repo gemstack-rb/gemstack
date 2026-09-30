@@ -2,6 +2,10 @@
 
 All GemStack gems are released together with one version.
 
+## Unreleased
+
+- Add the `gs` executable alias, including app-local binstubs and matching help output.
+
 ## 0.3.0
 
 **GemStack is now one gem.** The framework — core, cache, schema, http, db, jobs, mail, storage, contract,

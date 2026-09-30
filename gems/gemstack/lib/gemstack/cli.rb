@@ -32,8 +32,8 @@ module GemStack
 
       def exit_on_failure? = true
 
-      # Shown in help output regardless of how the CLI was launched.
-      def basename = "gemstack"
+      # Show the executable the user invoked in Thor's help output.
+      def basename = File.basename($PROGRAM_NAME) == "gs" ? "gs" : "gemstack"
     end
 
     GENERATORS = "resource, model, migration, controller, job, policy, deploy"

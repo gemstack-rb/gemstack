@@ -27,6 +27,9 @@ Install the `gemstack` command:
 gem install gemstack
 ```
 
+This also installs `gs`, a shorter alias for the same CLI. Generated apps include
+both `bin/gemstack` and `bin/gs` for commands run through the app's bundle.
+
 New apps pin the Ruby that created them in `.ruby-version` and `.tool-versions`,
 and Node.js in `.node-version`, `.nvmrc` and `.tool-versions`, so rbenv, rvm,
 chruby, asdf, mise, nvm, fnm and nodenv all pick the right versions inside the
@@ -38,6 +41,7 @@ app. `gemstack doctor` says if they don't, with the command for your tool.
 gemstack new shop
 cd shop
 gemstack dev
+# or, through the app's bundle: bin/gs dev
 ```
 
 `gemstack new` writes the app, runs `bundle install`, creates the database
@@ -134,6 +138,7 @@ db/migrations/       Sequel migrations; db/seeds.rb for development data
 test/                GemStack::TestCase tests
 frontend/            Next.js App Router + TypeScript + TanStack Query
 bin/gemstack         CLI binstub for this app's bundle
+bin/gs               short CLI binstub for this app's bundle
 ```
 
 There is no User model, no authentication and no CRUD: you decide what the

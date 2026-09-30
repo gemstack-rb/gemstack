@@ -10,8 +10,8 @@ version = "0.3.0"
 Gem::Specification.new do |spec|
   spec.name = "gemstack-cli"
   spec.version = version
-  spec.summary = "The gemstack command (installed with the gemstack gem)"
-  spec.description = "Owns the gemstack executable. The CLI itself — generators, dev server, db and jobs " \
+  spec.summary = "The gemstack and gs commands (installed with the gemstack gem)"
+  spec.description = "Owns the gemstack and gs executable launchers. The CLI itself — generators, dev server, db and jobs " \
                      "commands — is part of the gemstack gem, which installs this one."
   spec.authors = ["Adware Technologies", "Shoaib Malik"]
   spec.email = ["gemstack26@gmail.com"]

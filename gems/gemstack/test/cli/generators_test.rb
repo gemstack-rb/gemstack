@@ -29,7 +29,7 @@ class AppGeneratorTest < Minitest::Test
       .env.example .gitignore .node-version .nvmrc .ruby-version .tool-versions Gemfile README.md
       app/controllers/application_controller.rb
       app/jobs/application_job.rb app/mailers/application_mailer.rb app/mailers/templates/.keep
-      app/models/application_model.rb app/serializers/application_serializer.rb bin/gemstack config.ru
+      app/models/application_model.rb app/serializers/application_serializer.rb bin/gemstack bin/gs config.ru
       config/app.rb config/database.yml config/environments/development.rb config/environments/production.rb
       config/environments/test.rb config/puma.rb config/routes.rb db/migrations/.keep db/seeds.rb
       frontend/app/globals.css frontend/app/layout.tsx frontend/app/page.module.css frontend/app/page.tsx
@@ -40,6 +40,7 @@ class AppGeneratorTest < Minitest::Test
 
     assert_equal expected, files(root)
     assert File.executable?(File.join(root, "bin/gemstack"))
+    assert File.executable?(File.join(root, "bin/gs"))
   end
 
   def test_no_business_resources

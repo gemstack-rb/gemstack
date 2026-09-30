@@ -9,20 +9,21 @@ or `gs help COMMAND`. `g` is short for `generate`.
 
 ```bash
 gemstack new shop                         # SQLite; Next.js frontend; bundle + npm install; git init
+gs new shop                               # same command with the shorter executable
 gemstack new shop --database=postgresql   # or mysql2, trilogy (MySQL), sqlite3 (default)
 gemstack new shop --skip-frontend         # API only, no Next.js
 gemstack new shop --skip-database         # no database (no models)
 gemstack new shop --skip-install          # write files only (no bundle/npm install)
 gemstack new shop --skip-git
 
-gemstack dev              # Next.js + Ruby API + jobs worker behind one port → http://localhost:3000
+gs dev                    # Next.js + Ruby API + jobs worker behind one port → http://localhost:3000
 PORT=3001 gemstack dev    # another port
 gemstack server           # only the Ruby API (Puma); alias: s
 gemstack console          # IRB with the app loaded (-e production for another environment); alias: c
-gemstack routes           # list API routes (-g TEXT to filter)
+gs routes                 # list API routes (-g TEXT to filter)
 gemstack test             # run the Ruby tests (or: gemstack test test/models/product_test.rb); alias: t
 gemstack doctor           # check the setup and say how to fix problems (--production before deploying)
-gemstack version
+gs version
 ```
 
 ## Environments
@@ -53,7 +54,7 @@ environment. Inside the console, `GemStack.env` shows the environment and
 ### A full feature: `resource`
 
 ```bash
-gemstack g resource Product name:string price:decimal description:text:optional category:references
+gs g resource Product name:string price:decimal description:text:optional category:references
 ```
 
 Migration, model, serializer, controller with the five REST actions, routes,
@@ -87,7 +88,7 @@ REST routes; any other action becomes `GET /api/reports/<action>`.
 ### A model on its own
 
 ```bash
-gemstack g model Product name:string price:decimal sku:string:unique
+gs g model Product name:string price:decimal sku:string:unique
 gemstack db:migrate
 ```
 
@@ -166,8 +167,8 @@ The generated types and clients update themselves while `gemstack dev` runs
 ## Database
 
 ```bash
-gemstack db:create        # create the database (SQLite: the file) — gemstack new already does this
-gemstack db:migrate       # apply pending migrations (--target VERSION to go up or down to one)
+gs db:create              # create the database (SQLite: the file) — gemstack new already does this
+gs db:migrate             # apply pending migrations (--target VERSION to go up or down to one)
 gemstack db:rollback      # undo the last migration (--steps 2 for more)
 gemstack db:status        # which migrations have run
 gemstack db:seed          # load db/seeds.rb

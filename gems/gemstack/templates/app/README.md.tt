@@ -5,6 +5,7 @@ Next.js + TypeScript frontend, served from one origin.
 
 ```bash
 gemstack dev          # http://localhost:3000  (/api/* → Ruby, everything else → Next.js)
+gs dev                # same command through the short executable alias
 gemstack routes       # list API routes
 gemstack test         # run the Ruby tests
 gemstack console      # IRB with the app loaded
