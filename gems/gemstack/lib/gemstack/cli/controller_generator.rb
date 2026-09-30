@@ -27,12 +27,15 @@ module GemStack
       end
 
       def run
+        @manifest = GenerationManifest.new(@root)
         template_files("controller", override_root: @root).each do |rel, source|
           target = File.join(@root, rel.delete_suffix(".tt").gsub("%file_name%", file_name))
-          write(target, render(File.read(source), source))
+          write_tracked(target, render(File.read(source, encoding: "UTF-8"), source), owner: "controller:#{file_name}")
         end
         add_routes
         self
+      ensure
+        @manifest&.save
       end
 
       def route_for(action)
@@ -60,12 +63,14 @@ module GemStack
         path = File.join(@root, "config/routes.rb")
         return status("skip", path, "not found — add routes manually") unless File.file?(path)
 
-        content = File.read(path)
+        @manifest.absolute("config/routes.rb")
+        content = File.read(path, encoding: "UTF-8")
         lines = actions.map { |action| route_line(action) }.reject { |line| content.include?(line) }
         return status("identical", path) if lines.empty?
         return status("skip", path, "no `GemStack.routes do` block found") unless content.match?(ROUTES_BLOCK)
 
         File.write(path, content.sub(ROUTES_BLOCK) { |open| open + lines.map { |l| "  #{l}\n" }.join })
+        lines.each { |line| @manifest.record_route("  #{line}\n", owner: "controller:#{file_name}") }
         status("route", path, lines.join("; "))
       end
     end

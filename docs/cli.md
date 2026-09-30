@@ -1,9 +1,53 @@
 # Command reference
 
 Every command runs inside an application folder (the one with `config/app.rb`),
+<<<<<<< HEAD
 except `gemstack new`. `gsk` is a shorter executable alias for `gemstack`; all
 commands work with either name. `gemstack help COMMAND` shows all options. `g`
 is short for `generate`.
+=======
+except `gemstack new`. `gemstack help COMMAND` shows all options. `g` is short
+for `generate`; `d` is short for `destroy`.
+
+## Remove generated code
+
+```bash
+bin/gemstack d resource Product --dry-run
+bin/gemstack destroy resource Product --yes
+bin/gemstack d model Company --yes
+bin/gemstack d controller Reports --yes
+```
+
+Model, controller and resource generators record file ownership, content hashes and exact route lines
+in `.gemstack/generators.json`. **Commit this manifest with your generated code.** Resources generated
+before ownership tracking was introduced are not tracked and require manual removal. Shared helpers,
+pre-existing files and custom files are preserved. Use the app's `bin/gemstack` when testing a local
+checkout so an older globally installed CLI is not selected.
+
+`--dry-run` previews the plan without changing files or regenerating contracts. Removal prompts for
+confirmation; `--yes` is required in scripts. Modified tracked files require `--force`. Edited or
+ambiguous generated routes, unsafe paths, symlinks and detectable remaining Ruby model references are
+refused even with `--force`. Review dynamic references, seeds and custom frontend imports yourself.
+The TypeScript/OpenAPI contract is refreshed after removal unless `--skip-contract` is supplied.
+If that refresh fails, run `bin/gemstack contract` after fixing the application's configuration.
+
+Migration history is read from the selected environment (`-e ENV`, otherwise `GEMSTACK_ENV` or
+development), without booting the models. Tracked migrations confirmed **pending** are removed with
+the generated code; modified migrations still require `--force`. Applied migrations are retained.
+If database state cannot be determined, migrations are retained with a notice. Check other deployed
+environments before deleting a migration: pending locally does not mean pending everywhere.
+
+Destroy never rolls back migrations or drops tables, so existing database rows remain. To remove a
+table, first review `bin/gemstack db:status`. If its creation is the latest applied migration and the
+data can be discarded, `bin/gemstack db:rollback` can undo it; run destroy again to remove the now-pending
+tracked migration. Otherwise, add a separate migration that drops the table. These database operations
+can delete data and must be reviewed separately.
+
+Regenerating a resource reuses an existing `*_create_<table>.rb` migration instead of producing a
+duplicate. For example, generate → migrate → destroy → generate → migrate preserves the original
+table and data. New or changed fields need a separate schema migration; regeneration does not change
+the retained migration. If a later migration dropped the table, write a new migration to recreate it.
+>>>>>>> 431ed0a (Add safe destroy command for generated resources)
 
 ## Create and run
 

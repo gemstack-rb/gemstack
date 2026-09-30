@@ -34,10 +34,13 @@ module GemStack
       end
 
       def run
+        @manifest = GenerationManifest.new(@root)
         ensure_base_classes(@root, *(%i[model serializer] & @parts))
         @parts.each { |part| render_part(part) }
         add_routes if @parts.include?(:controller)
         self
+      ensure
+        @manifest&.save
       end
 
       # --- template helpers -------------------------------------------------
@@ -127,12 +130,31 @@ module GemStack
       private
 
       def render_part(part)
+        return if part == :migration && existing_migration?
+
         template_files("resource/#{part}", override_root: @root).sort.each do |rel, source|
           next if skip?(part, rel)
 
           target = File.join(@root, substitute(rel.delete_suffix(".tt")))
-          write(target, render(File.read(source), source))
+          content = render(File.read(source, encoding: "UTF-8"), source)
+          if rel == "frontend/lib/format.ts"
+            write(target, content) # shared by every resource
+          else
+            write_tracked(target, content, owner: owner_for(part))
+          end
         end
+      end
+
+      def existing_migration?
+        paths = Dir.glob(File.join(@root, "db/migrations/*_create_#{spec.table}.rb"))
+        paths.each { |path| status("keep", path, "existing create migration; use a new migration for schema changes") }
+        !paths.empty?
+      end
+
+      def owner_for(part)
+        return "controller:#{spec.plural}" if part == :controller
+
+        "#{part == :frontend ? "resource" : "model"}:#{spec.file_name}"
       end
 
       def skip?(part, rel)
@@ -156,13 +178,15 @@ module GemStack
 
         only = spec.crud? ? "" : ", only: %i[#{spec.actions.join(" ")}]"
         line = "resources :#{spec.plural}#{only}"
-        content = File.read(path)
+        @manifest.absolute("config/routes.rb")
+        content = File.read(path, encoding: "UTF-8")
         return status("identical", path) if content.match?(/^\s*resources :#{spec.plural}\b/)
         unless content.match?(ControllerGenerator::ROUTES_BLOCK)
           return status("skip", path, "no `GemStack.routes do` block — add `#{line}`")
         end
 
         File.write(path, content.sub(ControllerGenerator::ROUTES_BLOCK) { |open| "#{open}  #{line}\n" })
+        @manifest.record_route("  #{line}\n", owner: "controller:#{spec.plural}")
         status("route", path, line)
       end
     end

@@ -14,6 +14,9 @@ All GemStack gems are released together with one version.
 
 ## 0.3.1
 
+- Add `destroy` / `d` for tracked models, controllers and resources, with preview, modified-file protection
+  and contract refresh. Remove confirmed pending migrations, retain applied history, and reuse existing
+  create migrations when regenerating a resource.
 - New GemStack logo: a ruby gem on a stack. New apps show it on their welcome page (light and dark
   mode); the logo files are in `docs/assets/logo/`.
 - Docs: associations and eager loading in [models](docs/models.md): the Sequel equivalents of Rails'

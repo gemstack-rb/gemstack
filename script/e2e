@@ -102,6 +102,66 @@ step "migrate + Ruby tests"
 bin/gemstack db:migrate
 bin/gemstack test
 
+step "destroy preserves data, migrations and custom files"
+bin/gemstack g resource Post title:string body:text:optional --skip-contract
+bin/gemstack db:migrate
+bin/gemstack contract
+
+ruby -r ./config/app -e 'GemStack.boot!; Post.create(title: "Preserved data")'
+printf 'Custom file: keep me\n' > frontend/app/posts/notes.txt
+cp .gemstack/generators.json "$WORK/manifest.json"
+bin/gemstack d resource Post --dry-run
+cmp .gemstack/generators.json "$WORK/manifest.json"
+test -f app/models/post.rb
+test -f frontend/app/posts/page.tsx
+
+printf '\n# User customization\n' >> app/models/post.rb
+if bin/gemstack d resource Post --yes > "$WORK/refusal.log" 2>&1; then
+  echo "Expected modified-file protection to refuse removal"
+  exit 1
+fi
+grep -q 'Modified file' "$WORK/refusal.log"
+test -f app/controllers/posts_controller.rb
+
+bin/gemstack d resource Post --yes --force
+test ! -f app/models/post.rb
+test ! -f frontend/app/posts/page.tsx
+test ! -f frontend/lib/api/generated/posts.ts
+test -f frontend/app/posts/notes.txt
+test -f frontend/lib/format.ts
+test -f frontend/lib/api/generated/categories.ts
+ruby -r ./config/app -e '
+  GemStack.boot!
+  abort "Lost database data" unless GemStack.db[:posts].get(:title) == "Preserved data"
+  abort "Lost migration history" unless Dir["db/migrations/*_create_posts.rb"].one?
+  abort "Stale Post contract" if JSON.parse(File.read("openapi.json")).fetch("paths").keys.any? { |p| p.start_with?("/api/posts") }
+'
+bin/gemstack d resource Post --yes
+
+step "regenerate an applied resource without duplicating its create migration"
+bin/gemstack g resource Post title:string body:text:optional --skip-contract
+bin/gemstack db:migrate
+ruby -r ./config/app -e '
+  GemStack.boot!
+  abort "Duplicate create migration" unless Dir["db/migrations/*_create_posts.rb"].one?
+  abort "Lost data on regeneration" unless Post.first.title == "Preserved data"
+'
+bin/gemstack d resource Post --yes
+
+bin/gemstack g model Draft title:string
+bin/gemstack d model Draft --yes --skip-contract
+test ! -f app/models/draft.rb
+test -z "$(find db/migrations -name '*_create_drafts.rb' -print)"
+bin/gemstack g model Draft title:string
+bin/gemstack db:migrate
+bin/gemstack d model Draft --yes --skip-contract
+bin/gemstack g controller Exports index show
+bin/gemstack d controller Exports --yes
+test ! -f app/controllers/exports_controller.rb
+
+bin/gemstack db:migrate
+bin/gemstack test
+
 step "doctor + deploy files"
 bin/gemstack doctor
 bin/gemstack g deploy
