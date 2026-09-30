@@ -47,19 +47,25 @@ class DestroyMigrationTest < Minitest::Test
   def setup
     super
     gems = File.expand_path("../../..", __dir__)
+    sqlite3_version = Gem.loaded_specs.fetch("sqlite3").version.to_s
+
     write("Gemfile", <<~RUBY)
       source "https://rubygems.org"
+
       path #{gems.inspect} do
         gem "gemstack"
       end
-      gem "sqlite3", "~> 2.0"
+
+      gem "sqlite3", #{sqlite3_version.inspect}
     RUBY
+
     write("config/app.rb", <<~RUBY)
       require "bundler/setup"
       require "gemstack/db"
       GemStack.setup(root: File.expand_path("..", __dir__))
       GemStack.config.db.log_queries = false
     RUBY
+
     write("config/database.yml", <<~YAML)
       development:
         adapter: sqlite3
@@ -68,8 +74,16 @@ class DestroyMigrationTest < Minitest::Test
         adapter: sqlite3
         database: db/test.sqlite3
     YAML
+
     # Offline fixtures cannot fetch checksums for Ruby's bundled gems.
-    output, error, status = in_app("env", "BUNDLE_LOCKFILE_CHECKSUMS=false", "bundle", "lock", "--local")
+    output, error, status = in_app(
+      "env",
+      "BUNDLE_LOCKFILE_CHECKSUMS=false",
+      "bundle",
+      "lock",
+      "--local"
+    )
+
     assert status.success?, output + error
   end
 
