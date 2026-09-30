@@ -90,6 +90,10 @@ module GemStack
       def find_by(conditions) = first(conditions)
       def find_by!(conditions) = first(conditions) || raise(DB::RecordNotFound, "#{name} not found")
 
+      def delete_all
+        dataset.delete
+      end
+
       alias create! create
 
       # Associations with familiar names; the Sequel names work too.
