@@ -11,7 +11,7 @@ version.
 Optional module — `gemstack add realtime`:
 
 ```ruby
-gem "gemstack-realtime", "~> 0.3.2"
+gem "gemstack-realtime", "~> 0.3.3"
 ```
 
 ## Documentation
