@@ -1,8 +1,9 @@
 # gemstack-cli
 
-The `gemstack` command. It is installed with the [`gemstack`](https://rubygems.org/gems/gemstack) gem —
-`gem install gemstack` — and its code (generators, development server, `db:*` and `jobs` commands) lives
-there; this gem only provides the executable.
+The `gemstack` command and its short alias, `gsk`. Both are installed with the
+[`gemstack`](https://rubygems.org/gems/gemstack) gem — `gem install gemstack` — and run the same CLI.
+Its code (generators, development server, `db:*` and `jobs` commands) lives in that gem; this gem provides
+the executable launchers.
 
 GemStack is a modular Ruby API framework for Next.js applications by
 [Adware Technologies](https://www.adwaretech.com) — [gemstack-rb/gemstack](https://github.com/gemstack-rb/gemstack).

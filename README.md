@@ -91,6 +91,7 @@ const created: Product = await products.create({ name: "Lamp", price: "9.99" });
 | `gemstack g resource Product name:string price:decimal` | full vertical slice: migration, model, API, TypeScript client, Next.js pages (`--api-only`, `--frontend-only`, `--actions=`) |
 | `gemstack g controller Reports index show` | a controller on its own, with routes and tests |
 | `gemstack g model Product name:string` | a model on its own: migration, model, serializer, test |
+| `gemstack destroy resource Product` / `gemstack d model Product` | remove tracked generated code (`--dry-run`, `--yes`, `--force`); preserve applied/committed migrations and database data ([migration rules and flags](docs/cli.md#remove-generated-code)) |
 | `gemstack g migration AddStockToProducts stock:integer` | a migration |
 | `gemstack g job SendDigest [QUEUE]` | a background job (`gemstack jobs` runs a worker) |
 | `gemstack g policy Order` / `gemstack g deploy` | an authorization policy / Docker, compose, Caddy, Procfile |
@@ -112,7 +113,7 @@ server database ([databases](docs/database.md)).
 
 ```bash
 gem install gemstack
-gemstack new shop                  # Gemfile: gem "gemstack", "~> 0.3.2"
+gemstack new shop                  # Gemfile: gem "gemstack", "~> 0.3.3"
 ```
 
 One gem is the framework: routing, controllers, models, background jobs, mail,
@@ -130,12 +131,12 @@ require "gemstack/mail"     # mailers
 
 Authentication (`gemstack-auth`) and realtime (`gemstack-realtime`) are
 separate gems because they compile native extensions; `gemstack add auth` and
-`gemstack add realtime` add them. `gemstack-cli` only holds the `gemstack`
-executable and comes with `gemstack`. All gems are released together, with
+`gemstack add realtime` add them. `gemstack-cli` holds the `gemstack` and `gsk`
+executable launchers and comes with `gemstack`. All gems are released together, with
 one version.
 
 **Hacking on GemStack itself?** Clone this repository (every gem lives in
-`gems/` and is published from here). `bin/gemstack` runs
+`gems/` and is published from here). `bin/gemstack` and `bin/gsk` run
 the CLI straight from the checkout, and apps it creates point their Gemfile at
 the checkout (`path "…/gems"`), so framework changes apply immediately.
 `bundle exec rake gems:install` installs the checkout's gems as if released.

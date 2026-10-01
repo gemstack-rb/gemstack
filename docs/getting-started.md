@@ -27,6 +27,8 @@ Install the `gemstack` command:
 gem install gemstack
 ```
 
+GemStack also installs `gsk` as a shorter alias for `gemstack`.
+
 New apps pin the Ruby that created them in `.ruby-version` and `.tool-versions`,
 and Node.js in `.node-version`, `.nvmrc` and `.tool-versions`, so rbenv, rvm,
 chruby, asdf, mise, nvm, fnm and nodenv all pick the right versions inside the
@@ -51,7 +53,7 @@ Open **http://localhost:3000** — the starter page calls
 `gemstack dev` prints:
 
 ```text
-  GemStack v0.3.2 · development
+  GemStack v0.3.3 · development
 
   ✓ Gateway    http://localhost:3000  (/api/* → Ruby, everything else → Next.js)
   … Ruby API   starting on 127.0.0.1:52011 (internal)

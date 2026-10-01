@@ -141,6 +141,15 @@ module GemStack
         true
       end
 
+      def write_tracked(path, content, owner:)
+        relative = Pathname.new(File.expand_path(path)).relative_path_from(Pathname.new(File.expand_path(@root))).to_s
+        @manifest.absolute(relative)
+        existed = File.exist?(path)
+        return unless write(path, content)
+
+        @manifest.record_file(path, owner: owner, existed: existed)
+      end
+
       def status(label, path, note = nil)
         shown = path.delete_prefix("#{Dir.pwd}/")
         @output.puts("  #{label.rjust(9)}  #{shown}#{"  (#{note})" if note}")

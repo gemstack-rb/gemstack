@@ -130,7 +130,7 @@ class ArchitectureTest < Minitest::Test
   # gemstack-cli owns the executable (it did before 0.3.0, and RubyGems won't
   # hand an installed executable to another gem); the code is in gemstack.
   def test_the_executable_belongs_to_gemstack_cli
-    assert_equal ["gemstack"], spec("gemstack-cli").executables
+    assert_equal %w[gemstack gsk], spec("gemstack-cli").executables
     assert_empty spec("gemstack").executables
     assert_empty spec("gemstack-cli").runtime_dependencies, "no cycle: gemstack depends on gemstack-cli"
     assert File.file?(File.join(GEMS_DIR, "gemstack/lib/gemstack/cli.rb"))
