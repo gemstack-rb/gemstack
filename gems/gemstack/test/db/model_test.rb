@@ -106,14 +106,17 @@ class ModelTest < Minitest::Test
   end
 
   def test_delete_all
-    MtProduct.create(name: "Lamp", price: 1)
-    MtProduct.create(name: "Table", price: 2)
+    MtProduct.create(name: "Lamp", price: 1, active: true)
+    MtProduct.create(name: "Table", price: 2, active: false)
+    MtProduct.create(name: "Chair", price: 3, active: false)
 
-    assert_equal 2, MtProduct.count
+    assert_equal 3, MtProduct.count
 
-    MtProduct.delete_all
+    deleted = MtProduct.where(active: false).delete_all
 
-    assert_equal 0, MtProduct.count
+    assert_equal 2, deleted
+    assert_equal 1, MtProduct.count
+    assert_equal ["Lamp"], MtProduct.select_map(:name)
   end
 
   def test_unique_violation_maps_to_field_error

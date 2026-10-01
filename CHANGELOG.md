@@ -2,6 +2,10 @@
 
 All GemStack gems are released together with one version.
 
+## Unreleased
+
+- Models support `delete_all` on classes and filtered queries; it skips callbacks and validations and returns the number of rows deleted.
+
 ## 0.3.2
 
 - `gemstack` shows the real error when one of its dependencies can't be loaded, instead of saying the

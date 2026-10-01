@@ -36,6 +36,10 @@ module GemStack
     # clearly with "relation does not exist".
     self.require_valid_table = false
 
+    dataset_module do
+      def delete_all = delete
+    end
+
     class << self
       def gemstack_fields
         @gemstack_fields ||= superclass.respond_to?(:gemstack_fields) ? superclass.gemstack_fields.dup : {}
@@ -89,10 +93,6 @@ module GemStack
 
       def find_by(conditions) = first(conditions)
       def find_by!(conditions) = first(conditions) || raise(DB::RecordNotFound, "#{name} not found")
-
-      def delete_all
-        dataset.delete
-      end
 
       alias create! create
 
