@@ -105,6 +105,20 @@ class ModelTest < Minitest::Test
     assert_raises(GemStack::DB::RecordNotFound) { MtProduct.find_by!(name: "x") }
   end
 
+  def test_delete_all
+    MtProduct.create(name: "Lamp", price: 1, active: true)
+    MtProduct.create(name: "Table", price: 2, active: false)
+    MtProduct.create(name: "Chair", price: 3, active: false)
+
+    assert_equal 3, MtProduct.count
+
+    deleted = MtProduct.where(active: false).delete_all
+
+    assert_equal 2, deleted
+    assert_equal 1, MtProduct.count
+    assert_equal ["Lamp"], MtProduct.select_map(:name)
+  end
+
   def test_unique_violation_maps_to_field_error
     MtProduct.create(name: "Lamp", price: 1, sku: "A1")
     error = render_error { MtProduct.create(name: "Lamp2", price: 1, sku: "A1") }

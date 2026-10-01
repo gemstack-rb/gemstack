@@ -4,6 +4,7 @@ All GemStack gems are released together with one version.
 
 ## Unreleased
 
+- Models support `delete_all` on classes and filtered queries; it skips callbacks and validations and returns the number of rows deleted.
 - Add `destroy` / `d` for tracked models, controllers and resources, with preview, modified-file protection
   and contract refresh. Automatically remove only pending, uncommitted migrations; retain applied or
   committed history, with `--remove-migrations` for explicit removal of pending migrations. Reuse create

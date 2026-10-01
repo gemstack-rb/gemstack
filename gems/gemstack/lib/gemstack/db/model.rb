@@ -36,6 +36,10 @@ module GemStack
     # clearly with "relation does not exist".
     self.require_valid_table = false
 
+    dataset_module do
+      def delete_all = delete
+    end
+
     class << self
       def gemstack_fields
         @gemstack_fields ||= superclass.respond_to?(:gemstack_fields) ? superclass.gemstack_fields.dup : {}

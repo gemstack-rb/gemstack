@@ -100,6 +100,7 @@ product.update(price: 12)                       # alias update!
 product.destroy
 GemStack.db[:products].where(active: false).delete  # the Sequel::Database
 GemStack.transaction { order.save; payment.save }   # nested calls become savepoints
+Product.where(active: false).delete_all # skips callbacks and validations, like Rails; returns the number of rows deleted.
 ```
 
 Queries are always parameterised; build conditions with hashes or Sequel's
