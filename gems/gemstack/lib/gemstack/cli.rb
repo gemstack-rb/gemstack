@@ -6,11 +6,17 @@ require "gemstack/core"
 module GemStack
   # The `gemstack` command.
   class CLI < Thor
+    require_relative "cli/add_next_steps"
     require_relative "cli/project"
     require_relative "cli/generator"
+    require_relative "cli/generation_manifest"
+    require_relative "cli/migration_status"
+    require_relative "cli/migration_git_status"
+    require_relative "cli/destroy_generator"
     require_relative "cli/app_generator"
     require_relative "cli/controller_generator"
     require_relative "cli/resource_spec"
+    require_relative "cli/migration_changes"
     require_relative "cli/resource_generator"
     require_relative "cli/migration_generator"
     require_relative "cli/job_generator"
@@ -40,10 +46,7 @@ module GemStack
     GENERATORS = "resource, model, migration, controller, job, policy, deploy"
 
     map %w[-v --version] => :version
-    map "s" => :server
-    map "c" => :console
-    map "t" => :test
-    map "g" => :generate
+    map "s" => :server, "c" => :console, "t" => :test, "g" => :generate, "d" => :destroy
 
     desc "new NAME", "Create a new GemStack application (Ruby API + Next.js frontend)"
     long_desc <<~DESC
@@ -183,6 +186,12 @@ module GemStack
       end
     end
 
+    desc "destroy GENERATOR NAME", "Remove tracked generated code (alias: d): model, controller, resource"
+    DestroyGenerator.configure(self)
+    def destroy(generator = nil, name = nil)
+      DestroyGenerator.invoke(generator, name, cli: self) { |root| refresh_contract(root) }
+    end
+
     desc "add FEATURE", "Add an optional module to this app: realtime, auth, storage"
     long_desc <<~DESC
       gemstack add realtime
@@ -204,16 +213,8 @@ module GemStack
       AddGenerator.new(feature, root: root, install: !options[:skip_install]).run
       refresh_contract(root) if %w[auth
                                    storage].include?(feature) && !options[:skip_install] && !options[:skip_contract]
-      say("\n#{ADD_NEXT_STEPS.fetch(feature)}")
+      say("\n#{AddNextSteps::STEPS.fetch(feature)}")
     end
-
-    ADD_NEXT_STEPS = {
-      "realtime" => "Next: declare channels in config/channels.rb, then GemStack.broadcast(...) — see docs/realtime.md",
-      "auth" => "Next: gemstack db:migrate · open http://localhost:3000/signup · " \
-                "`before :require_login` in controllers — see docs/authentication.md",
-      "storage" => "Next: uploadFile(file) from frontend/lib/upload.ts · production: STORAGE_SERVICE=s3, S3_BUCKET " \
-                   "— see docs/storage.md"
-    }.freeze
 
     desc "doctor", "Check that this app can run (Ruby, Node, database, migrations, contract…) and how to fix it"
     long_desc <<~DESC
@@ -228,9 +229,7 @@ module GemStack
     end
 
     desc "version", "Print the GemStack version"
-    def version
-      say("GemStack #{GemStack::VERSION}")
-    end
+    def version = say("GemStack #{GemStack::VERSION}")
 
     no_commands do
       # -e ENV, else GEMSTACK_ENV, else development.

@@ -91,6 +91,7 @@ const created: Product = await products.create({ name: "Lamp", price: "9.99" });
 | `gemstack g resource Product name:string price:decimal` | full vertical slice: migration, model, API, TypeScript client, Next.js pages (`--api-only`, `--frontend-only`, `--actions=`) |
 | `gemstack g controller Reports index show` | a controller on its own, with routes and tests |
 | `gemstack g model Product name:string` | a model on its own: migration, model, serializer, test |
+| `gemstack destroy resource Product` / `gemstack d model Product` | remove tracked generated code (`--dry-run`, `--yes`, `--force`); preserve applied/committed migrations and database data ([migration rules and flags](docs/cli.md#remove-generated-code)) |
 | `gemstack g migration AddStockToProducts stock:integer` | a migration |
 | `gemstack g job SendDigest [QUEUE]` | a background job (`gemstack jobs` runs a worker) |
 | `gemstack g policy Order` / `gemstack g deploy` | an authorization policy / Docker, compose, Caddy, Procfile |
