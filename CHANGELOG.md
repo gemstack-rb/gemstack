@@ -2,6 +2,13 @@
 
 All GemStack gems are released together with one version.
 
+## 0.3.5 (Unreleased)
+
+- Add `gemstack update` command to easily update GemStack version in applications
+  - Detects versioned vs path dependencies in Gemfile
+  - Updates Gemfile constraint and runs bundle update
+  - Provides appropriate guidance for both dependency types
+
 ## 0.3.4
 
 - Models support `delete_all` on classes and filtered queries; it skips callbacks and validations and returns the number of rows deleted.

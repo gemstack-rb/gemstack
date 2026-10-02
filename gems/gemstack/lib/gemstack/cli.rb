@@ -24,6 +24,7 @@ module GemStack
     require_relative "cli/doctor"
     require_relative "cli/deploy_generator"
     require_relative "cli/add_generator"
+    require_relative "cli/update_generator"
     require_relative "cli/commands/db"
     require_relative "cli/commands/jobs"
     require_relative "cli/console_methods"
@@ -51,7 +52,6 @@ module GemStack
     desc "new NAME", "Create a new GemStack application (Ruby API + Next.js frontend)"
     long_desc <<~DESC
       Creates NAME/ with a Ruby API, a Next.js + TypeScript frontend and no business resources.
-
       Then: cd NAME && gemstack dev
     DESC
     method_option :skip_install, type: :boolean, default: false, desc: "Don't run bundle install / npm install"
@@ -197,12 +197,10 @@ module GemStack
     long_desc <<~DESC
       gemstack add realtime
         Adds gemstack-realtime, config/channels.rb, frontend/lib/gemstack/realtime.ts and test helpers.
-
       gemstack add auth
         Sign up, log in/out, password reset and email verification, API tokens and policies:
         migrations (users, sessions, auth_tokens), User model, controllers, routes, AuthMailer,
         tests and Next.js pages (/login, /signup, /forgot-password, /reset-password, /verify-email, /account).
-
       gemstack add storage
         File uploads straight from the browser to disk (development) or S3: config, uploads
         controller, routes and frontend/lib/upload.ts.
@@ -220,8 +218,7 @@ module GemStack
     desc "doctor", "Check that this app can run (Ruby, Node, database, migrations, contract…) and how to fix it"
     long_desc <<~DESC
       gemstack doctor               checks for development
-      gemstack doctor --production  also checks the settings a deploy needs (run it with the production
-                                    environment variables: SECRET_KEY_BASE, DATABASE_URL, SMTP_URL…)
+      gemstack doctor --production  also checks the settings a deploy needs (run it with the production environment variables: SECRET_KEY_BASE, DATABASE_URL, SMTP_URL…)
     DESC
     method_option :production, type: :boolean, default: false
     def doctor
@@ -231,6 +228,26 @@ module GemStack
 
     desc "version", "Print the GemStack version"
     def version = say("GemStack #{GemStack::VERSION}")
+
+    desc "update [VERSION]", "Update GemStack to the latest version or specified VERSION"
+    long_desc <<~DESC
+      Updates the GemStack version in your Gemfile and runs bundle update.
+      Examples:
+        gemstack update          # Update to latest GemStack version
+        gemstack update 0.3.5    # Update to specific version
+    DESC
+    def update(version = nil)
+      target_version = version || GemStack::VERSION
+      unless target_version == GemStack::VERSION
+        say("Warning: You are running gemstack version #{GemStack::VERSION} but trying to update to #{target_version}")
+        say("This command should be run from within the GemStack framework itself to update to #{target_version}")
+        say("For updating an application's GemStack dependency, run this command from the application directory")
+        return
+      end
+
+      generator = UpdateGenerator.new
+      generator.run
+    end
 
     no_commands do
       # -e ENV, else GEMSTACK_ENV, else development.

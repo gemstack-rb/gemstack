@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # All GemStack gems share one version; change it with `rake version:set[x.y.z]`.
-version = "0.3.4"
+version = "0.3.5"
 
 # Owns the `gemstack` executable; the command's code is in the gemstack gem,
 # which depends on this one (so `gem install gemstack` installs both). Kept as
