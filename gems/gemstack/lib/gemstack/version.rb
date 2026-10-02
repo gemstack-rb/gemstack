@@ -2,5 +2,5 @@
 
 module GemStack
   # All GemStack gems are released together under a single version.
-  VERSION = "0.3.3"
+  VERSION = "0.3.4"
 end

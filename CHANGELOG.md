@@ -2,7 +2,7 @@
 
 All GemStack gems are released together with one version.
 
-## Unreleased
+## 0.3.4
 
 - Models support `delete_all` on classes and filtered queries; it skips callbacks and validations and returns the number of rows deleted.
 - Add `destroy` / `d` for tracked models, controllers and resources, with preview, modified-file protection
