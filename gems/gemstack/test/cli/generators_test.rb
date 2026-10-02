@@ -5,6 +5,8 @@ require "test_helper"
 class AppGeneratorTest < Minitest::Test
   def generate(name = "shop", **)
     @tmp = Dir.mktmpdir
+    # Ensure consistent version detection by creating .tool-versions file
+    File.write(File.join(@tmp, ".tool-versions"), "ruby #{RUBY_VERSION}\nnodejs 22.11.0\n")
     @out = StringIO.new
     Dir.chdir(@tmp) do
       GemStack::CLI::AppGenerator.new(name, { skip_install: true, skip_git: true, ** }, output: @out).run

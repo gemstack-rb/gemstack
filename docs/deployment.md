@@ -28,33 +28,35 @@ Production defaults: JSON logs with request IDs, no exception details in
 responses, eager loading, HSTS on HTTPS requests, `.env` files not loaded
 (use real environment variables for secrets).
 
-## Docker
+## Kamal
 
 ```bash
 gemstack generate deploy
 ```
 
-reads the adapter from `config/database.yml` and writes a `Dockerfile` with two targets — `api` (Ruby, Puma; the same image runs
-`gemstack jobs` and `gemstack db:migrate`) and `web` (Next.js) — plus
-`compose.yaml` (PostgreSQL or MySQL service, or a volume for the SQLite file;
-Redis for realtime when the database isn't PostgreSQL), a `Caddyfile`, a `Procfile` and `.dockerignore`. Nothing is
-deployed; the files are yours to adapt.
+Generates a complete Kamal deployment configuration:
+- Dockerfile (multi-stage build for Ruby API and Next.js frontend)
+- config/deploy.yml (Kamal configuration with web, API, and optional jobs roles)
+- .kamal/secrets (references to environment variables for sensitive data)
+- bin/docker-entrypoint (handles database migrations on startup)
+- .dockerignore (optimizes Docker build context)
+
+Nothing is deployed yet — the files are yours to review, customize, and use.
 
 The images run as a non-root user, contain no `.env` files or secrets (all
 configuration comes from environment variables at runtime), and the API image
-has a `HEALTHCHECK` on `/api/health`.
+runs database migrations before starting the server.
 
-Try production mode locally — Postgres, migrations, API, jobs, Next.js and
-Caddy on **https://localhost** (Caddy's local certificate authority):
+Try production mode locally with Kamal:
 
 ```bash
 export SECRET_KEY_BASE=$(openssl rand -hex 64) POSTGRES_PASSWORD=$(openssl rand -hex 16)
-docker compose up --build
-docker compose run --rm api bundle exec gemstack doctor --production
+bundle install
+bundle exec kamal setup
 ```
 
-With a real domain, set `SITE_ADDRESS=example.com` and Caddy fetches a Let's
-Encrypt certificate.
+With a real domain, Kamal will automatically obtain and manage Let's
+Encrypt certificates via kamal-proxy.
 
 > Apps created from a GemStack **checkout** reference it with an absolute
 > `path` in the Gemfile, which the image can't see. Run `bundle cache --all`
@@ -62,43 +64,31 @@ Encrypt certificate.
 
 ### Platforms
 
+Kamal supports deployment to any VM or cloud provider with SSH access and Docker:
+
 | Platform | How |
 | --- | --- |
-| **Fly.io** | `fly launch` with the Dockerfile; one app for `--target api` (`[processes] app = "bundle exec puma -C config/puma.rb"`, `worker = "bundle exec gemstack jobs"`, `release_command = "bundle exec gemstack db:migrate"`) and one for `--target web` with `GEMSTACK_API_URL` pointing at the API's private address |
-| **Render** | A *Web Service* (Docker, target `api`) with pre-deploy command `bundle exec gemstack db:migrate`, a *Background Worker* with the same image running `bundle exec gemstack jobs`, a Web Service for `web`, and Render PostgreSQL |
-| **Railway** | Services from the same repo: `api` and `worker` (Dockerfile target `api`, start commands as in the `Procfile`), `web` (target `web`), and the PostgreSQL plugin; `DATABASE_URL` is provided |
-| **Heroku / Dokku** | The `Procfile` (`release`, `web`, `worker`) for the API with the Ruby buildpack, and the frontend as a separate Node app |
-| **A VM** | `docker compose up -d` with `SITE_ADDRESS` set, or systemd units for Puma, `gemstack jobs` and `npm start` behind Caddy/nginx |
-
-On platforms that proxy `/api` through Next.js (no Caddy), build the `web`
-image with `--build-arg GEMSTACK_API_URL=http://api.internal:4000`: rewrites are
-fixed at build time (see below).
+| **Generic VM/VPS** | `bundle exec kamal setup` then `bundle exec kamal deploy` |
+| **AWS EC2** | SSH to instance, run `bundle exec kamal setup`, then `bundle exec kamal deploy` |
+| **Google Compute Engine** | SSH to instance, run `bundle exec kamal setup`, then `bundle exec kamal deploy` |
+| **DigitalOcean Droplets** | SSH to droplet, run `bundle exec kamal setup`, then `bundle exec kamal deploy` |
+| **Linode** | SSH to instance, run `bundle exec kamal setup`, then `bundle exec kamal deploy` |
+| **Bare metal servers** | SSH to server, run `bundle exec kamal setup`, then `bundle exec kamal deploy` |
 
 ## Choose how `/api` reaches Ruby
 
 The browser always calls same-origin `/api/...`, so pick one:
 
-### 1. Reverse proxy (recommended)
+### 1. Reverse proxy (built-in with Kamal)
 
-Route `/api/*` to Puma and everything else to Next.js, e.g. Caddy:
+Kamal includes kamal-proxy which automatically handles SSL termination and
+proxies `/api/*` to your Ruby API and everything else to your Next.js frontend.
+No additional configuration needed.
 
-```caddy
-example.com {
-  handle /api/* {
-    reverse_proxy 127.0.0.1:4000
-  }
-  handle {
-    reverse_proxy 127.0.0.1:3000
-  }
-}
-```
+### 2. Next.js rewrites (alternative approach)
 
-Best for WebSockets and streaming; API traffic doesn't pass through Node.
-
-### 2. Next.js rewrites (no extra infrastructure)
-
-The generated `next.config.ts` proxies `/api/*` to `GEMSTACK_API_URL` when it
-is set. Deploy Next.js publicly and the API privately:
+If not using Kamal's proxy, the generated `next.config.ts` proxies `/api/*` to
+`GEMSTACK_API_URL` when it is set. Deploy Next.js publicly and the API privately:
 
 ```bash
 cd frontend
@@ -109,7 +99,7 @@ GEMSTACK_API_URL=http://api.internal:4000 npm start       # also used by Server 
 > **Set `GEMSTACK_API_URL` at build time.** Next.js evaluates `rewrites()` during
 > `next build`; changing it only at runtime does not change the rewrite target.
 
-Server-Sent Events work through rewrites; WebSockets need option 1.
+Server-Sent Events work through rewrites; WebSockets need option 1 (reverse proxy).
 
 ### 3. Separate domains
 
@@ -128,20 +118,19 @@ and build the frontend with `NEXT_PUBLIC_GEMSTACK_API_URL=https://api.example.co
 
 - `GEMSTACK_ENV=production` and `DATABASE_URL` for the API; `db:migrate` on release.
 - Database connections (PostgreSQL/MySQL): `WEB_CONCURRENCY × GEMSTACK_MAX_THREADS` per host (pool per worker).
-- SQLite: one server, the file on a persistent volume (the generated `compose.yaml` mounts `data`), backups.
-- Terminate TLS at the proxy and forward `X-Forwarded-Proto` (HSTS depends on it).
+- For SQLite: Kamal generates a volume definition to persist the database file.
+- SSL/TLS is handled automatically by kamal-proxy (Let's Encrypt) or can be brought externally.
 - `WEB_CONCURRENCY` ≈ CPU cores, `GEMSTACK_MAX_THREADS` 3–5.
 - YJIT is enabled automatically in production (`config.jit`); nothing to set.
 - Add `gem "brotli"` for Brotli compression; with a compressing CDN/proxy in front, either is fine
   (GemStack never re-compresses encoded responses).
-- Several processes/hosts? Use `config.cache.store = :redis` (`gem "redis-client"`, `REDIS_URL`).
-- Realtime (SSE) works through Next.js rewrites and reverse proxies; with nginx set
-  `proxy_read_timeout` above 15 s (GemStack sends `X-Accel-Buffering: no`). See docs/realtime.md.
+- Several processes/hosts? Kamal handles this natively through role-based configuration.
+- Realtime (SSE) works through Next.js rewrites and Kamal's proxy; see docs/realtime.md.
 - `SECRET_KEY_BASE` (`openssl rand -hex 64`) — needed by storage signatures and any module using
   `GemStack.key_for`; keep it stable across deploys.
 - With auth: `SMTP_URL`, `MAIL_FROM` and `APP_URL` (the frontend's public URL, for email links); run a
-  jobs worker (emails are sent from jobs); serve over HTTPS (the session cookie is `Secure`); call
-  `GemStack::Auth.cleanup!` daily; use the Redis cache store with several hosts so rate limits are shared.
+  jobs worker (emails are sent from jobs); Kamal handles HTTPS/TLS termination; call
+  `GemStack::Auth.cleanup!` daily; use Kamal's secrets management for API credentials.
 - With storage: `STORAGE_SERVICE=s3`, `S3_BUCKET`, `AWS_REGION` (+ credentials), `gem "aws-sdk-s3"`, and
   a bucket CORS rule allowing `PUT` from your site (docs/storage.md).
 - Health check: `GET /api/health` → `200 {"status":"ok"}`.
