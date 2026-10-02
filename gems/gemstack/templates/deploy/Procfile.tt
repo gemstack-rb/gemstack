@@ -1,6 +1,0 @@
-# Process types for Procfile platforms (Heroku, Render, Railway, Dokku…) — docs/deployment.md.
-release: bundle exec gemstack db:migrate
-web: GEMSTACK_API_PORT=${PORT:-4000} bundle exec puma -C config/puma.rb
-<% if jobs? -%>
-worker: bundle exec gemstack jobs
-<% end -%>

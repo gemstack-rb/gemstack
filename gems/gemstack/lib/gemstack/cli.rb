@@ -153,7 +153,7 @@ module GemStack
         app/policies/order_policy.rb + test (needs gemstack add auth)
 
       gemstack generate deploy
-        Dockerfile (api + web images), compose.yaml, Caddyfile, Procfile, .dockerignore
+        Kamal: Dockerfile, config/deploy.yml, .kamal/secrets, bin/docker-entrypoint, .dockerignore
 
       Field syntax: name:type[:optional][:unique][:index]. Types: #{ResourceSpec::TYPES.join(", ")}.
       Fields are required unless marked :optional.
@@ -180,7 +180,8 @@ module GemStack
       when "policy" then generate_policy(root, name)
       when "deploy"
         DeployGenerator.new(root: root, force: options[:force]).run
-        say("\nNext: docker compose up --build (see compose.yaml) · recipes: docs/deployment.md")
+        say("\nNext: bundle install, edit the CHANGE lines in config/deploy.yml, then " \
+            "bundle exec kamal setup — docs/deployment.md")
       when nil then abort("Usage: gemstack generate GENERATOR NAME. Generators: #{GENERATORS}")
       else abort("Unknown generator #{generator.inspect}. Available: #{GENERATORS}")
       end

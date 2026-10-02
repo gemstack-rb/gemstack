@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "yaml"
 
 class ResourceSpecTest < Minitest::Test
   Spec = GemStack::CLI::ResourceSpec
@@ -463,27 +464,55 @@ class DeployGeneratorTest < Minitest::Test
     GemStack::CLI::DeployGenerator.new(root: @root, output: @out).run
   end
 
+  def read(path) = File.read("#{@root}/#{path}")
+  def deploy = YAML.safe_load(read("config/deploy.yml"))
+
+  def with_database_yml(adapter)
+    FileUtils.mkdir_p("#{@root}/config")
+    File.write("#{@root}/config/database.yml", "default: &default\n  adapter: #{adapter}\nproduction:\n  <<: *default\n")
+  end
+
   def test_full_stack_app
     File.write("#{@root}/app/jobs/digest.rb", "")
-    generate(%(gem "gemstack", "~> 0.1.0"\ngem "gemstack-db"\ngem "gemstack-jobs"\ngem "gemstack-auth"\n))
-    dockerfile = File.read("#{@root}/Dockerfile")
-    compose = File.read("#{@root}/compose.yaml")
+    generate(%(gem "gemstack", "~> 0.3.0"\ngem "gemstack-db"\ngem "gemstack-jobs"\ngem "gemstack-auth"\n))
+    dockerfile = read("Dockerfile")
+    config = deploy
 
     assert_includes dockerfile, "ARG RUBY_VERSION=4.0.7"
     assert_includes dockerfile, "ARG NODE_VERSION=22"
-    assert_includes dockerfile, "FROM node:${NODE_VERSION}-slim AS web"
+    assert_includes dockerfile, "GEMSTACK_NEXT_OUTPUT=standalone"
+    assert_includes dockerfile, "COPY --from=frontend /usr/local/bin/node /usr/local/bin/node"
     assert_includes dockerfile, "USER app"
-    assert_includes compose, "name: my-shop"
-    assert_includes compose, "  jobs:\n    image: my_shop-api"
-    assert_includes compose, "SMTP_URL"
-    assert_includes compose, "SECRET_KEY_BASE: ${SECRET_KEY_BASE:?"
-    assert_includes File.read("#{@root}/Caddyfile"), "reverse_proxy web:3000"
-    assert_includes File.read("#{@root}/Procfile"), "worker: bundle exec gemstack jobs"
-    ignore = File.read("#{@root}/.dockerignore")
+    assert_includes dockerfile, %(ENTRYPOINT ["/app/bin/docker-entrypoint"])
+    assert_equal "my-shop", config["service"]
+    assert_equal "web", config["primary_role"]
+    assert_equal({ "ssl" => true, "host" => "app.example.com", "app_port" => 3000, "healthcheck" => { "path" => "/" } },
+                 config["proxy"])
+    assert_equal "node frontend/server.js", config.dig("servers", "web", "cmd")
+    assert_equal "http://my-shop-api:4000", config.dig("servers", "web", "env", "clear", "GEMSTACK_API_URL")
+    api = config.dig("servers", "api")
 
-    assert_includes ignore, ".env\n"
-    assert_includes ignore, "!.env.example"
+    assert_equal({ "network-alias" => "my-shop-api" }, api["options"])
+    # ssl: false — Kamal allows only one SSL role per host; /api inherits the root path's certificate.
+    # forward_headers: false — kamal-proxy sets X-Forwarded-For/Proto itself instead of trusting clients.
+    assert_equal({ "app_port" => 4000, "path_prefix" => "/api", "strip_path_prefix" => false, "ssl" => false,
+                   "forward_headers" => false, "healthcheck" => { "path" => "/api/health" } }, api["proxy"])
+    assert_equal "bundle exec gemstack jobs", config.dig("servers", "jobs", "cmd")
+    assert_equal %w[SECRET_KEY_BASE DATABASE_URL SMTP_URL], config.dig("env", "secret")
+    assert_equal "postgres:17", config.dig("accessories", "db", "image")
+    assert_equal "my_shop_production", config.dig("accessories", "db", "env", "clear", "POSTGRES_DB")
+    secrets = read(".kamal/secrets")
+
+    assert_includes secrets, "DATABASE_URL=postgres://app:$POSTGRES_PASSWORD@my-shop-db:5432/my_shop_production"
+    assert_includes secrets, "SMTP_URL=$SMTP_URL"
+    entrypoint = "#{@root}/bin/docker-entrypoint"
+
+    assert File.executable?(entrypoint)
+    assert_includes File.read(entrypoint), "bundle exec gemstack db:migrate"
+    assert_includes read("Gemfile"), %(gem "kamal", require: false, group: :development)
+    assert_includes read(".dockerignore"), ".kamal/"
     assert File.exist?("#{@root}/vendor/.keep")
+    %w[compose.yaml Caddyfile Procfile].each { |old| refute File.exist?("#{@root}/#{old}"), old }
   end
 
   def test_base_classes_alone_are_not_background_work
@@ -500,42 +529,54 @@ class DeployGeneratorTest < Minitest::Test
 
   def test_api_only_app_without_jobs
     FileUtils.rm_rf("#{@root}/frontend")
-    generate(%(gem "gemstack", "~> 0.1.0"\n))
+    generate(%(gem "gemstack", "~> 0.3.0"\n))
+    config = deploy
 
-    refute_includes File.read("#{@root}/Dockerfile"), "AS web"
-    refute_includes File.read("#{@root}/compose.yaml"), "  jobs:"
-    refute_includes File.read("#{@root}/compose.yaml"), "SMTP_URL"
-    refute_includes File.read("#{@root}/Caddyfile"), "web:3000"
-    refute_includes File.read("#{@root}/Procfile"), "worker:"
+    refute_includes read("Dockerfile"), "node"
+    assert_equal %w[api], config["servers"].keys
+    assert_equal "api", config["primary_role"]
+    assert_equal 4000, config.dig("proxy", "app_port")
+    assert_equal "/api/health", config.dig("proxy", "healthcheck", "path")
+    refute_includes read(".kamal/secrets"), "SMTP_URL"
   end
 
-  def with_database_yml(adapter)
-    FileUtils.mkdir_p("#{@root}/config")
-    File.write("#{@root}/config/database.yml", "default: &default\n  adapter: #{adapter}\nproduction:\n  <<: *default\n")
-  end
-
-  def test_sqlite_app
+  def test_sqlite_app_with_realtime
     with_database_yml("sqlite3")
-    generate(%(gem "gemstack"\ngem "gemstack-db"\ngem "gemstack-jobs"\ngem "gemstack-realtime"\ngem "gemstack-auth"\n))
-    compose = File.read("#{@root}/compose.yaml")
+    File.write("#{@root}/app/jobs/digest.rb", "")
+    generate(%(gem "gemstack"\ngem "gemstack-db"\ngem "gemstack-jobs"\ngem "gemstack-realtime"\n))
+    config = deploy
 
-    assert_includes compose, "DATABASE_URL: sqlite3:/data/production.sqlite3"
-    assert_includes compose, "    volumes: [data:/data]"
-    refute_includes compose, "image: postgres"
-    assert_includes compose, "REDIS_URL: redis://redis:6379/0", "realtime needs Redis without PostgreSQL"
-    refute_includes File.read("#{@root}/Dockerfile"), "libpq"
+    assert_equal "sqlite3:/data/production.sqlite3", config.dig("env", "clear", "DATABASE_URL")
+    assert_equal ["my-shop_data:/data"], config["volumes"]
+    assert_equal "redis://my-shop-redis:6379/0", config.dig("env", "clear", "REDIS_URL"), "realtime needs Redis"
+    assert_equal %w[redis], config["accessories"].keys
+    refute_includes read("Dockerfile"), "libpq"
+    refute_includes read(".kamal/secrets"), "DATABASE_URL"
   end
 
   def test_mysql_app
     with_database_yml("mysql2")
     generate(%(gem "gemstack"\ngem "gemstack-db"\n))
-    compose = File.read("#{@root}/compose.yaml")
-    dockerfile = File.read("#{@root}/Dockerfile")
+    dockerfile = read("Dockerfile")
 
-    assert_includes compose, "image: mysql:8.4"
-    assert_includes compose, "DATABASE_URL: mysql2://app:${MYSQL_PASSWORD:?set MYSQL_PASSWORD}@db:3306/app"
+    assert_equal "mysql:8.4", deploy.dig("accessories", "db", "image")
+    assert_includes read(".kamal/secrets"), "DATABASE_URL=mysql2://app:$MYSQL_PASSWORD@my-shop-db:3306/my_shop_production"
     assert_includes dockerfile, "default-libmysqlclient-dev"
     assert_includes dockerfile, "libmariadb3"
+  end
+
+  def test_turns_on_standalone_output_in_existing_next_configs
+    File.write("#{@root}/frontend/next.config.ts", "const nextConfig: NextConfig = {\n  reactStrictMode: true,\n};\n")
+    generate(%(gem "gemstack"\n))
+
+    assert_includes read("frontend/next.config.ts"), %(output: process.env.GEMSTACK_NEXT_OUTPUT === "standalone")
+    assert_includes @out.string, "standalone output"
+  end
+
+  def test_does_not_add_kamal_twice
+    generate(%(gem "gemstack"\ngem "kamal", require: false\n))
+
+    assert_equal 1, read("Gemfile").scan("kamal").size
   end
 
   def test_warns_about_local_gem_paths

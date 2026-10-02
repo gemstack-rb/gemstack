@@ -88,6 +88,25 @@ class DoctorTest < Minitest::Test
     assert_equal :ok, doctor.tap(&:check_git_secrets).results.first.status
   end
 
+  def test_kamal_secrets_must_only_reference_values
+    assert_empty doctor.tap(&:check_kamal_secrets).results, "no .kamal/secrets, no check"
+    FileUtils.mkdir_p("#{@root}/.kamal")
+    File.write("#{@root}/.kamal/secrets", <<~SECRETS)
+      # comment
+      KAMAL_REGISTRY_PASSWORD=$KAMAL_REGISTRY_PASSWORD
+      DATABASE_URL=postgres://app:$POSTGRES_PASSWORD@shop-db:5432/shop
+      SMTP_URL=$(kamal secrets fetch --adapter 1password --from Vault/SMTP)
+      EMPTY=
+    SECRETS
+
+    assert_equal [[:ok, ".kamal/secrets only references secrets"]], statuses(doctor.tap(&:check_kamal_secrets))
+    File.write("#{@root}/.kamal/secrets", "SECRET_KEY_BASE=3f9a1c\nPOSTGRES_PASSWORD=\"hunter2\"\nOK=$OK\n")
+    doc = doctor.tap(&:check_kamal_secrets)
+
+    assert_equal [[:fail, ".kamal/secrets contains secret values: SECRET_KEY_BASE, POSTGRES_PASSWORD"]], statuses(doc)
+    assert_includes @out.string, "rotate those secrets"
+  end
+
   def test_port_in_use
     server = TCPServer.new("127.0.0.1", 0)
     ENV["PORT"] = server.addr[1].to_s

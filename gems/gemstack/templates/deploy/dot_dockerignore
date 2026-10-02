@@ -1,5 +1,6 @@
 # Kept out of the build context (and so out of images).
 .git
+.kamal/
 .env
 .env.*
 !.env.example
