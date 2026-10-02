@@ -1,0 +1,156 @@
+# Kamal deploy configuration for <%= app_name %> (gemstack generate deploy — docs/deployment.md).
+#
+#   bundle exec kamal setup    # first deploy: Docker, kamal-proxy (HTTPS) and accessories on the server
+#   bundle exec kamal deploy   # every deploy after that, with zero downtime
+#
+# Replace the placeholders marked CHANGE. Secrets are read from .kamal/secrets,
+# which only references environment variables, never their values.
+
+service: <%= service %>
+
+# CHANGE: your registry user (Docker Hub here; see registry: below for others).
+image: your-user/<%= service %>
+
+servers:
+<% if frontend? -%>
+  web:
+    hosts:
+      - 192.168.0.1 # CHANGE: your server's IP or hostname
+    cmd: node frontend/server.js
+    env:
+      clear:
+        # Server Components call the API directly, through the alias below.
+        GEMSTACK_API_URL: http://<%= service %>-api:4000
+  api:
+    hosts:
+      - 192.168.0.1 # CHANGE
+    cmd: bundle exec puma -C config/puma.rb
+    options:
+      network-alias: <%= service %>-api
+    # The browser calls /api on the same origin: kamal-proxy sends it here.
+    proxy:
+      app_port: 4000
+      path_prefix: /api
+      strip_path_prefix: false
+      # HTTPS comes from the web role's certificate (same domain, root path).
+      ssl: false
+      # Don't trust X-Forwarded-* headers sent by clients (IP-based rate limits).
+      forward_headers: false
+      healthcheck:
+        path: /api/health
+    env:
+      clear:
+        WEB_CONCURRENCY: 2
+<% else -%>
+  api:
+    hosts:
+      - 192.168.0.1 # CHANGE: your server's IP or hostname
+    cmd: bundle exec puma -C config/puma.rb
+    env:
+      clear:
+        WEB_CONCURRENCY: 2
+<% end -%>
+<% if jobs? -%>
+  jobs:
+    hosts:
+      - 192.168.0.1 # CHANGE
+    cmd: bundle exec gemstack jobs
+<% end -%>
+
+primary_role: <%= frontend? ? "web" : "api" %>
+
+# HTTPS with a Let's Encrypt certificate: point the domain's DNS at the server first.
+proxy:
+  ssl: true
+  host: app.example.com # CHANGE: your domain
+<% if frontend? -%>
+  app_port: 3000
+  healthcheck:
+    path: /
+<% else -%>
+  app_port: 4000
+  healthcheck:
+    path: /api/health
+<% end -%>
+
+registry:
+  # server: ghcr.io # for GitHub's registry; Docker Hub is the default
+  username: your-user # CHANGE
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+
+env:
+  clear:
+    GEMSTACK_ENV: production
+    APP_URL: https://app.example.com # CHANGE: the public URL (email links)
+<% if sqlite? -%>
+    DATABASE_URL: sqlite3:/data/production.sqlite3
+<% end -%>
+<% if redis? -%>
+    REDIS_URL: redis://<%= service %>-redis:6379/0
+<% end -%>
+<% if mail? -%>
+    MAIL_FROM: app@example.com # CHANGE
+<% end -%>
+  secret:
+    - SECRET_KEY_BASE
+<% if database? && !sqlite? -%>
+    - DATABASE_URL
+<% end -%>
+<% if mail? -%>
+    - SMTP_URL
+<% end -%>
+<% if sqlite? -%>
+
+# The SQLite file lives on this volume, shared by every role: keep them on one server.
+volumes:
+  - "<%= service %>_data:/data"
+<% end -%>
+
+builder:
+  arch: amd64
+<% if postgresql? || mysql? || redis? -%>
+
+accessories:
+<% if postgresql? -%>
+  db:
+    image: postgres:17
+    host: 192.168.0.1 # CHANGE
+    env:
+      clear:
+        POSTGRES_USER: app
+        POSTGRES_DB: <%= database_name %>
+      secret:
+        - POSTGRES_PASSWORD
+    directories:
+      - data:/var/lib/postgresql/data
+<% elsif mysql? -%>
+  db:
+    image: mysql:8.4
+    host: 192.168.0.1 # CHANGE
+    env:
+      clear:
+        MYSQL_USER: app
+        MYSQL_DATABASE: <%= database_name %>
+        MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+      secret:
+        - MYSQL_PASSWORD
+    directories:
+      - data:/var/lib/mysql
+<% end -%>
+<% if redis? -%>
+  redis:
+    image: redis:7
+    host: 192.168.0.1 # CHANGE
+    cmd: redis-server --save "" --appendonly no
+<% end -%>
+<% end -%>
+
+# bundle exec kamal console | logs | migrate | shell
+aliases:
+  console: app exec --interactive --reuse --roles=api "bundle exec gemstack console"
+  logs: app logs --follow
+<% if database? -%>
+  migrate: app exec --roles=api "bundle exec gemstack db:migrate"
+<% end -%>
+  shell: app exec --interactive --reuse --roles=api "bash"

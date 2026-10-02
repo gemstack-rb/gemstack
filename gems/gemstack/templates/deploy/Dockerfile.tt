@@ -1,63 +1,65 @@
 # syntax=docker/dockerfile:1
-# Production images for <%= app_name %> (gemstack generate deploy — docs/deployment.md).
+# Production image for <%= app_name %> (gemstack generate deploy — docs/deployment.md).
 #
-#   docker build --target api -t <%= app_name %>-api .     # Ruby API (Puma), also runs jobs and migrations
+# One image runs every process; config/deploy.yml (Kamal) gives each role its command:
 <% if frontend? -%>
-#   docker build --target web -t <%= app_name %>-web .     # Next.js
+#   web   node frontend/server.js              Next.js
+<% end -%>
+#   api   bundle exec puma -C config/puma.rb   Ruby API (bin/docker-entrypoint migrates first)
+<% if jobs? -%>
+#   jobs  bundle exec gemstack jobs            background jobs
 <% end -%>
 #
+#   docker build -t <%= service %> .
+#
 # Configuration comes from the environment at runtime (SECRET_KEY_BASE,
-# DATABASE_URL, …); nothing secret is baked into the images.
+# DATABASE_URL, …); nothing secret is baked into the image.
 
 ARG RUBY_VERSION=<%= ruby_version %>
+<% if frontend? -%>
 ARG NODE_VERSION=<%= node_version %>
+<% end -%>
 
-# ── Ruby API ────────────────────────────────────────────────────────────────
-FROM ruby:${RUBY_VERSION}-slim AS api-build
+FROM ruby:${RUBY_VERSION}-slim AS base
+WORKDIR /app
+ENV GEMSTACK_ENV=production BUNDLE_DEPLOYMENT=1 BUNDLE_WITHOUT="development:test" BUNDLE_PATH=/usr/local/bundle
+
+# ── Ruby gems and application code ──────────────────────────────────────────
+FROM base AS gems
 RUN apt-get update -qq && apt-get install --no-install-recommends -y <%= build_packages %> \
     && rm -rf /var/lib/apt/lists/*
-WORKDIR /app
-ENV BUNDLE_DEPLOYMENT=1 BUNDLE_WITHOUT="development:test" BUNDLE_PATH=/usr/local/bundle
 COPY Gemfile Gemfile.lock ./
 COPY vendor/ ./vendor/
 RUN bundle install --jobs 4 && rm -rf /usr/local/bundle/cache "${BUNDLE_PATH}"/ruby/*/cache
 COPY . .
-RUN rm -rf frontend tmp/* log/* .env*
+RUN rm -rf frontend tmp/* log/* .env* .kamal
+<% if frontend? -%>
 
-FROM ruby:${RUBY_VERSION}-slim AS api
+# ── Next.js (standalone build: the server and only the modules it needs) ─────
+FROM node:${NODE_VERSION}-slim AS frontend
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+ENV NEXT_TELEMETRY_DISABLED=1 GEMSTACK_NEXT_OUTPUT=standalone
+RUN npm run build \
+    && mkdir -p public && cp -r public .next/standalone/ && cp -r .next/static .next/standalone/.next/
+<% end -%>
+
+# ── Runtime ─────────────────────────────────────────────────────────────────
+FROM base
 RUN apt-get update -qq && apt-get install --no-install-recommends -y <%= runtime_packages %> \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 1000 app && useradd --system --uid 1000 --gid app --create-home app<% if sqlite? %> \
     && mkdir -p /data && chown app:app /data<% end %>
-WORKDIR /app
-ENV GEMSTACK_ENV=production BUNDLE_DEPLOYMENT=1 BUNDLE_WITHOUT="development:test" BUNDLE_PATH=/usr/local/bundle \
-    GEMSTACK_API_HOST=0.0.0.0 GEMSTACK_API_PORT=4000
-COPY --from=api-build /usr/local/bundle /usr/local/bundle
-COPY --from=api-build --chown=app:app /app /app
-USER app
-EXPOSE 4000
-HEALTHCHECK --interval=10s --timeout=3s --start-period=20s CMD curl -fsS http://127.0.0.1:4000/api/health || exit 1
-# Other processes use the same image: `bundle exec gemstack jobs`, `bundle exec gemstack db:migrate`.
-CMD ["bundle", "exec", "puma", "-C", "config/puma.rb"]
+COPY --from=gems /usr/local/bundle /usr/local/bundle
+COPY --from=gems --chown=app:app /app /app
 <% if frontend? -%>
-
-# ── Next.js ─────────────────────────────────────────────────────────────────
-FROM node:${NODE_VERSION}-slim AS web-build
-WORKDIR /app
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
-COPY frontend/ ./
-ENV NEXT_TELEMETRY_DISABLED=1
-# GEMSTACK_API_URL is only needed here when Next.js proxies /api itself (no reverse proxy in front).
-ARG GEMSTACK_API_URL
-ENV GEMSTACK_API_URL=${GEMSTACK_API_URL}
-RUN npm run build && npm prune --omit=dev
-
-FROM node:${NODE_VERSION}-slim AS web
-WORKDIR /app
-ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000
-COPY --from=web-build --chown=node:node /app ./
-USER node
-EXPOSE 3000
-CMD ["npm", "start"]
+COPY --from=frontend /usr/local/bin/node /usr/local/bin/node
+COPY --from=frontend --chown=app:app /frontend/.next/standalone /app/frontend
 <% end -%>
+ENV GEMSTACK_API_HOST=0.0.0.0 GEMSTACK_API_PORT=4000<% if frontend? %> NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000<% end %>
+USER app
+EXPOSE <%= frontend? ? "3000 4000" : "4000" %>
+ENTRYPOINT ["/app/bin/docker-entrypoint"]
+CMD ["bundle", "exec", "puma", "-C", "config/puma.rb"]

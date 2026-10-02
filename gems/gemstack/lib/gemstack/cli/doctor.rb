@@ -4,6 +4,7 @@ require "open3"
 require "socket"
 require "gemstack/dev"
 require_relative "doctor/upgrade_check"
+require_relative "doctor/secret_checks"
 
 module GemStack
   class CLI < Thor
@@ -13,6 +14,7 @@ module GemStack
     # deploy needs.
     class Doctor
       include UpgradeCheck
+      include SecretChecks
 
       Result = Struct.new(:status, :title, :hint)
 
@@ -33,6 +35,7 @@ module GemStack
         check_node
         check_frontend_dependencies
         check_git_secrets
+        check_kamal_secrets
         check_gemstack_upgrade
         booted = check_boot
         if booted
@@ -98,23 +101,6 @@ module GemStack
       end
 
       # Secrets committed to git stay in its history (and in every clone).
-      def check_git_secrets
-        return unless File.directory?(path(".git"))
-
-        out, status = @run.call("git", "-C", @root, "ls-files", "--", ".env", ".env.*", "*.pem", "*.key",
-                                "tmp/*_secret")
-        return unless status.success?
-
-        tracked = out.lines.map(&:strip).reject { |file| file.empty? || file.end_with?(".example") }
-        if tracked.empty?
-          pass("no secret files tracked by git")
-        else
-          problem("secret files tracked by git: #{tracked.join(", ")}",
-                  "remove them from git (git rm --cached …), rotate every secret they contain, and ask whoever " \
-                  "manages your infrastructure to check where the repository was shared")
-        end
-      end
-
       def check_boot
         ENV["GEMSTACK_ENV"] = "production" if @production
         ENV["GEMSTACK_ENV"] ||= "development"

@@ -1,0 +1,21 @@
+#!/bin/sh
+# Runs before every process in the production image (Dockerfile ENTRYPOINT).
+set -e
+
+case "$*" in
+<% if database? -%>
+  *puma*)
+    # The API applies pending migrations before it starts serving, so a
+    # deploy never runs new code against an old schema.
+    bundle exec gemstack db:migrate
+    ;;
+<% end -%>
+<% if frontend? -%>
+  *server.js*)
+    # Docker sets HOSTNAME to the container's name; Next.js listens on it.
+    export HOSTNAME=0.0.0.0
+    ;;
+<% end -%>
+esac
+
+exec "$@"
