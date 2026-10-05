@@ -27,8 +27,7 @@ current=$(ruby -e 'require "./gems/gemstack/lib/gemstack/version"; print GemStac
 grep -q "^## $VERSION" CHANGELOG.md || fail "add a '## $VERSION' section to CHANGELOG.md"
 
 # Published gems and repositories are public and permanent.
-sensitive=$(git ls-files | grep -iE '(^|/)\.env($|\.[^e])|\.pem$|\.key$|(^|/)(secrets?|credentials?)(\.[a-z]+)?$|_secret$|\.sql$|\.csv$|\.log$' || true)
-[ -z "$sensitive" ] || fail "files that may hold secrets or data are tracked — remove them and get them reviewed before publishing: $sensitive"
+script/check-secret-files || fail "files that may hold secrets or data are tracked — get them reviewed before publishing"
 
 if [ -z "${SKIP_TESTS:-}" ]; then
   echo "== tests (needs GEMSTACK_TEST_DATABASE_URL for the database suites)"

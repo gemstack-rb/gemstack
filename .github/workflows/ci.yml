@@ -47,6 +47,8 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
+      - name: No secret or data files are tracked
+        run: script/check-secret-files
       - name: Tests, database suites and RuboCop
         run: bundle exec rake
 

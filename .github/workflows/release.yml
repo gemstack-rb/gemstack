@@ -83,10 +83,7 @@ jobs:
 
       - name: Nothing that looks like a secret or data file is tracked
         if: steps.pending.outputs.any == 'true'
-        run: |
-          if git ls-files | grep -iE '(^|/)\.env($|\.[^e])|\.pem$|\.key$|(^|/)(secrets?|credentials?)(\.[a-z]+)?$|_secret$|\.sql$|\.csv$|\.log$'; then
-            echo "files above may hold secrets or data — remove them before releasing"; exit 1
-          fi
+        run: script/check-secret-files
 
       - name: Tests (SQLite) and build
         if: steps.pending.outputs.any == 'true'
