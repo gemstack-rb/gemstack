@@ -22,26 +22,35 @@ module GemStack
         generator.write(File.join(root, "db/migrations/#{stamp}_create_gemstack_jobs.rb"), Jobs::Migration::SOURCE)
       end
 
-      def initialize(name, root:, queue: nil, output: $stdout, force: false)
-        super(output: output, force: force)
-        @root = root
+      # The job class for NAME: "send_digest" → "SendDigest", "DigestJob" stays.
+      def self.class_name_for(name)
         base = Inflector.camelize(name.to_s).delete_suffix("Job")
         raise Thor::Error, "Invalid job name #{name.inspect}" unless base.match?(/\A[A-Z][A-Za-z0-9]*\z/)
 
-        @class_name = name.to_s.end_with?("Job") ? Inflector.camelize(name.to_s) : base
+        name.to_s.end_with?("Job") ? Inflector.camelize(name.to_s) : base
+      end
+
+      def initialize(name, root:, queue: nil, output: $stdout, force: false)
+        super(output: output, force: force)
+        @root = root
+        @class_name = self.class.class_name_for(name)
         @file_name = Inflector.underscore(@class_name)
         @queue_name = queue
         Generator.check_constant!(@class_name, suggestion: "#{@class_name}Job") unless name == "Placeholder"
       end
 
       def run
+        @manifest = GenerationManifest.new(@root)
         ensure_base_classes(@root, :job)
         template_files("job", override_root: @root).each do |rel, source|
           target = File.join(@root, rel.delete_suffix(".tt").gsub("%file_name%", file_name))
-          write(target, render(File.read(source), source))
+          write_tracked(target, render(File.read(source), source), owner: "job:#{file_name}")
         end
+        # The jobs table is shared by every job: not tracked, so destroy keeps it.
         self.class.install_migration(@root, output: @output) if File.directory?(File.join(@root, "db"))
         self
+      ensure
+        @manifest&.save
       end
     end
   end

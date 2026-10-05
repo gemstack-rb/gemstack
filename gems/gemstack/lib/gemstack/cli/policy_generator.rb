@@ -24,11 +24,14 @@ module GemStack
       end
 
       def run
+        @manifest = GenerationManifest.new(@root)
         template_files("policy", override_root: @root).each do |rel, source|
           target = File.join(@root, rel.delete_suffix(".tt").gsub("%file_name%", file_name))
-          write(target, render(File.read(source), source))
+          write_tracked(target, render(File.read(source), source), owner: "policy:#{file_name}")
         end
         self
+      ensure
+        @manifest&.save
       end
     end
   end

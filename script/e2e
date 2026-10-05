@@ -175,6 +175,19 @@ test ! -f app/models/shared_draft.rb
 test -n "$(find db/migrations -name '*_create_shared_drafts.rb' -print)"
 bin/gemstack db:migrate -e test
 
+step "destroy a job, a policy and a migration"
+bin/gemstack g job WeeklyReport
+bin/gemstack d job WeeklyReport --yes
+test ! -f app/jobs/weekly_report.rb && test ! -f test/jobs/weekly_report_test.rb
+test -f app/jobs/send_digest.rb # other jobs stay
+test -n "$(find db/migrations -name '*_create_gemstack_jobs.rb' -print)" # the shared jobs table stays
+bin/gemstack g policy Note
+bin/gemstack d policy Note --yes
+test ! -f app/policies/note_policy.rb && test ! -f test/policies/note_policy_test.rb
+bin/gemstack g migration AddSummaryToProducts summary:text:optional
+bin/gemstack d migration AddSummaryToProducts --yes
+test -z "$(find db/migrations -name '*_add_summary_to_products.rb' -print)"
+
 bin/gemstack db:migrate
 bin/gemstack test
 
@@ -190,6 +203,10 @@ bundle exec ruby -e '
   abort "unexpected Kamal roles: #{roles}" unless roles == %w[api jobs web]
   puts "config/deploy.yml is valid (roles: #{roles.join(", ")})"
 '
+bin/gemstack d deploy --yes
+test ! -f config/deploy.yml && test ! -f Dockerfile && test ! -f .kamal/secrets && test ! -f bin/docker-entrypoint
+if grep -q '^gem "kamal"' Gemfile; then echo "destroy deploy left the kamal gem in the Gemfile"; exit 1; fi
+bundle install --quiet
 
 step "TypeScript"
 (cd frontend && npx tsc --noEmit)

@@ -12,6 +12,8 @@ module GemStack
     class GenerationManifest
       PATH = ".gemstack/generators.json"
       VERSION = 1
+      # "<generator>:<name>", e.g. "model:post", "job:send_digest", "deploy:app".
+      OWNER = %r{\A(?:model|controller|resource|job|policy|migration|deploy):[a-z][a-z0-9_]*(?:/[a-z][a-z0-9_]*)*\z}
 
       attr_reader :files, :routes
 
@@ -115,7 +117,7 @@ module GemStack
       end
 
       def owner?(owner)
-        owner.is_a?(String) && owner.match?(%r{\A(?:model|controller|resource):[a-z][a-z0-9_]*(?:/[a-z][a-z0-9_]*)*\z})
+        owner.is_a?(String) && owner.match?(OWNER)
       end
     end
   end

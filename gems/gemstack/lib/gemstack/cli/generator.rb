@@ -141,11 +141,11 @@ module GemStack
         true
       end
 
-      def write_tracked(path, content, owner:)
+      def write_tracked(path, content, owner:, mode: nil)
         relative = Pathname.new(File.expand_path(path)).relative_path_from(Pathname.new(File.expand_path(@root))).to_s
         @manifest.absolute(relative)
         existed = File.exist?(path)
-        return unless write(path, content)
+        return unless write(path, content, mode: mode)
 
         @manifest.record_file(path, owner: owner, existed: existed)
       end

@@ -1,13 +1,20 @@
 # frozen_string_literal: true
 
 require "ripper"
+require_relative "destroy_generator/kinds"
 
 module GemStack
   class CLI < Thor
     # Plans the complete operation before changing anything. Only migrations
     # confirmed pending in the selected environment are eligible for removal.
     class DestroyGenerator < Generator
-      KINDS = %w[model controller resource].freeze
+      include Kinds
+
+      KINDS = %w[model controller resource job policy migration deploy].freeze
+      # Kinds that change the API, so the TypeScript contract is regenerated after them.
+      CONTRACT_KINDS = %w[model controller resource].freeze
+      # What `gemstack generate deploy` writes at the app's root.
+      DEPLOY_FILES = %w[Dockerfile .dockerignore config/deploy.yml .kamal/secrets bin/docker-entrypoint].freeze
       SHARED = (Generator::BASE_CLASSES.values + %w[
         app/controllers/application_controller.rb test/test_helper.rb
         frontend/lib/format.ts frontend/lib/gemstack/client.ts
@@ -36,7 +43,7 @@ module GemStack
           environment: options[:environment]
         )
         removal.run { options[:yes] || confirm?(cli) }
-        yield root if removal.changed? && !options[:skip_contract]
+        yield root if removal.contract_affected? && !options[:skip_contract]
       end
 
       def self.confirm?(cli)
@@ -48,8 +55,9 @@ module GemStack
       def initialize(kind, name, root:, dry_run: false, force: false, remove_migrations: false,
                      output: $stdout, environment: nil)
         super(output: output, force: force)
-        unless KINDS.include?(kind) && name && !name.empty?
-          raise Thor::Error, "Usage: gemstack destroy model|controller|resource NAME"
+        unless KINDS.include?(kind) && (kind == "deploy" || (name && !name.empty?))
+          raise Thor::Error, "Usage: gemstack destroy model|controller|resource|job|policy|migration NAME, " \
+                             "or gemstack destroy deploy"
         end
 
         @root = File.expand_path(root)
@@ -65,12 +73,13 @@ module GemStack
       end
 
       def changed? = @changed
+      def contract_affected? = @changed && CONTRACT_KINDS.include?(@kind)
 
       def run
         plan!
         preview
         raise Thor::Error, "Nothing removed:\n  #{@conflicts.join("\n  ")}" unless @conflicts.empty?
-        return self if @dry_run || (@files.empty? && @routes.empty?)
+        return self if @dry_run || (@files.empty? && @routes.empty? && !@gemfile_after)
 
         if block_given? && !yield
           @output.puts("Cancelled; no files changed.")
@@ -84,18 +93,6 @@ module GemStack
 
       private
 
-      def owners_for(name)
-        if @kind == "controller"
-          controller = ControllerGenerator.new(name, [], root: @root)
-          return ["controller:#{controller.file_name}"]
-        end
-
-        @spec = ResourceSpec.new(name)
-        owners = ["model:#{@spec.file_name}"]
-        owners += ["controller:#{@spec.plural}", "resource:#{@spec.file_name}"] if @kind == "resource"
-        owners
-      end
-
       def plan!
         @conflicts = []
         selected = @manifest.files.select { |_, entry| @owners.include?(entry["owner"]) }
@@ -105,13 +102,15 @@ module GemStack
         plan_migrations
         @files.each { |path, entry| check_file(path, entry) }
         plan_routes
+        plan_gemfile if @kind == "deploy"
         check_dependencies if @spec && @files.key?("app/models/#{@spec.file_name}.rb")
+        check_constant_references if @constant && @files.any?
       end
 
       def check_file(path, entry)
-        if SHARED.include?(path) || !path.start_with?("app/", "test/", "frontend/", "db/migrations/")
-          raise Thor::Error, "Refusing to remove shared or unsupported path: #{path}"
-        end
+        allowed = path.start_with?("app/", "test/", "frontend/", "db/migrations/") ||
+                  (@kind == "deploy" && DEPLOY_FILES.include?(path))
+        raise Thor::Error, "Refusing to remove shared or unsupported path: #{path}" if SHARED.include?(path) || !allowed
 
         absolute = @manifest.absolute(path)
         raise Thor::Error, "Expected a generated file: #{path}" if File.exist?(absolute) && !File.file?(absolute)
@@ -226,8 +225,11 @@ module GemStack
           status(@snapshots[path] ? "remove" : "missing", path)
         end
         @routes.each { |entry| status("unroute", "config/routes.rb", entry["line"].strip) }
-        if @files.empty? && @routes.empty?
-          @output.puts("No tracked files to remove. Resources generated before ownership tracking need manual removal.")
+        status("ungem", "Gemfile", "kamal") if @gemfile_after
+        if @files.empty? && @routes.empty? && !@gemfile_after
+          @output.puts("No tracked files to remove. Code generated before ownership tracking (resources, models " \
+                       "and controllers before 0.3.4; jobs, policies, migrations and deploy files before 0.3.6) " \
+                       "needs manual removal.")
         end
         @output.puts("Dry run; no files or API contracts changed.") if @dry_run
       end
@@ -235,15 +237,22 @@ module GemStack
       # Recheck after interactive confirmation, before the first mutation.
       def verify_snapshot!
         @manifest.verify!
+        verify_migrations!
+        verify_files!
+        verify_routes!
+        verify_gemfile! if @gemfile_after
+      end
 
+      def verify_migrations!
         if @pending && !@pending.empty? && @migration_status.applied != @applied
           raise Thor::Error, "Migration state changed or became unavailable; run destroy again"
         end
+        return unless @auto_removed_migrations&.any? { |path, _| @migration_git_status.committed(path) != false }
 
-        if @auto_removed_migrations&.any? { |path, _| @migration_git_status.committed(path) != false }
-          raise Thor::Error, "Migration Git state changed; run destroy again"
-        end
+        raise Thor::Error, "Migration Git state changed; run destroy again"
+      end
 
+      def verify_files!
         @snapshots.each do |relative, original|
           path = @manifest.absolute(relative)
           current = File.file?(path) ? Digest::SHA256.file(path).hexdigest : nil
@@ -252,12 +261,12 @@ module GemStack
                   "File changed during confirmation: #{relative}; run destroy again"
           end
         end
+      end
 
+      def verify_routes!
         path = @manifest.absolute("config/routes.rb")
         current = File.file?(path) ? File.read(path, encoding: "UTF-8") : ""
-        return if current == @route_content
-
-        raise Thor::Error, "Routes changed during confirmation; run destroy again"
+        raise Thor::Error, "Routes changed during confirmation; run destroy again" unless current == @route_content
       end
 
       def apply
@@ -266,10 +275,12 @@ module GemStack
           File.delete(path) if File.file?(path)
         end
         File.write(@manifest.absolute("config/routes.rb"), @route_after) unless @routes.empty?
+        File.write(@manifest.absolute("Gemfile"), @gemfile_after) if @gemfile_after
         @manifest.forget(@files.keys, @routes)
         @manifest.save
         @changed = true
         @output.puts("Removed tracked code. Database data was not changed.")
+        @output.puts("Run bundle install to update Gemfile.lock.") if @gemfile_after
       end
     end
   end

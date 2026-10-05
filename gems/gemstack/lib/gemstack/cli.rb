@@ -188,7 +188,8 @@ module GemStack
       end
     end
 
-    desc "destroy GENERATOR NAME", "Remove tracked generated code (alias: d): model, controller, resource"
+    desc "destroy GENERATOR [NAME]",
+         "Remove generated code (alias: d): model, controller, resource, job, policy, migration, deploy"
     DestroyGenerator.configure(self)
     def destroy(generator = nil, name = nil)
       DestroyGenerator.invoke(generator, name, cli: self) { |root| refresh_contract(root) }

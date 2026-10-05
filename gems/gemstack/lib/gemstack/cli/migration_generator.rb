@@ -26,11 +26,14 @@ module GemStack
       end
 
       def run
+        @manifest = GenerationManifest.new(@root)
         template_files("migration", override_root: @root).each do |rel, source|
           path = rel.delete_suffix(".tt").gsub("%timestamp%", timestamp).gsub("%file_name%", file_name)
-          write(File.join(@root, path), render(File.read(source), source))
+          write_tracked(File.join(@root, path), render(File.read(source), source), owner: "migration:#{file_name}")
         end
         self
+      ensure
+        @manifest&.save
       end
 
       private

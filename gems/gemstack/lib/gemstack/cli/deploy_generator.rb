@@ -77,10 +77,12 @@ module GemStack
       end
 
       def run
+        @manifest = GenerationManifest.new(@root)
         template_files("deploy", override_root: @root).sort.each do |rel, source|
           content = File.read(source)
           content = render(content, source) if rel.end_with?(".tt")
-          write(File.join(@root, output_path(rel.delete_suffix(".tt"))), content, mode: File.stat(source).mode)
+          write_tracked(File.join(@root, output_path(rel.delete_suffix(".tt"))), content,
+                        owner: "deploy:app", mode: File.stat(source).mode)
         end
         keep = File.join(@root, "vendor/.keep")
         write(keep, "") unless File.exist?(keep) # the Dockerfile copies vendor/ (e.g. vendor/cache)
@@ -88,6 +90,8 @@ module GemStack
         enable_standalone_frontend if frontend?
         warn_about_local_gems
         self
+      ensure
+        @manifest&.save
       end
 
       private

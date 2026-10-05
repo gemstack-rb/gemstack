@@ -2,6 +2,15 @@
 
 All GemStack gems are released together with one version.
 
+## Unreleased
+
+- `gemstack destroy` reverses every generator: besides resources, models and controllers it now removes
+  jobs, policies, migrations (same safety rules: only pending, uncommitted ones unless
+  `--remove-migrations`) and the Kamal deploy files (`gemstack destroy deploy`, which also removes the
+  `kamal` Gemfile line it added). Jobs and policies still named elsewhere in the app are refused; shared
+  files such as `application_job.rb` and the jobs table migration are kept. Code from these generators is
+  tracked from this release on.
+
 ## 0.3.5
 
 - **`gemstack generate deploy` now sets up [Kamal](https://kamal-deploy.org)** instead of docker compose and

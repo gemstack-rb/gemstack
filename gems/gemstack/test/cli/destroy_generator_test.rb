@@ -642,8 +642,8 @@ class DestroySafetyTest < Minitest::Test
   end
 
   def test_invalid_arguments
-    [[nil, nil], ["job", "MailJob"], ["model", nil], ["model", "../Post"],
-     ["controller", "../../Reports"]].each do |kind, name|
+    [[nil, nil], ["mailer", "Mail"], ["model", nil], ["job", nil], ["model", "../Post"],
+     ["controller", "../../Reports"], ["migration", "../evil"]].each do |kind, name|
       assert_raises(Thor::Error) { destroy(kind, name) }
     end
   end

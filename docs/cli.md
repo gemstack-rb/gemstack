@@ -12,19 +12,37 @@ bin/gemstack d resource Product --dry-run
 bin/gemstack destroy resource Product --yes
 bin/gemstack d model Company --yes
 bin/gemstack d controller Reports --yes
+bin/gemstack d job SendDigest --yes
+bin/gemstack d policy Order --yes
+bin/gemstack d migration AddStockToProducts --yes
+bin/gemstack d deploy --yes
 ```
 
-Model, controller and resource generators record file ownership, content hashes and exact route lines
-in `.gemstack/generators.json`. **Commit this manifest with your generated code.** Resources generated
-before ownership tracking was introduced are not tracked and require manual removal. Shared helpers,
-pre-existing files and custom files are preserved. Use the app's `bin/gemstack` when testing a local
+`destroy` reverses `generate`: every generator (resource, model, controller, job, policy, migration,
+deploy) records the files it writes — ownership, content hashes and exact route lines — in
+`.gemstack/generators.json`. **Commit this manifest with your generated code.** Code generated before
+tracking existed (resources, models and controllers before 0.3.4; jobs, policies, migrations and deploy
+files before 0.3.6) is not tracked and needs manual removal. Shared files are always kept: base classes
+(`application_job.rb`, …), the jobs table migration every job uses, helpers, pre-existing and custom files.
+
+What each one removes:
+
+| `destroy` | Removes |
+| --- | --- |
+| `resource NAME` | model, serializer, controller, routes, tests, Next.js pages and queries |
+| `model NAME` / `controller NAME` | that part of a resource, or a stand-alone controller and its routes |
+| `job NAME` | `app/jobs/<name>.rb` and its test (refused while other code still names the job) |
+| `policy NAME` | `app/policies/<name>_policy.rb` and its test (refused while other code still names it) |
+| `migration NAME` | the migration file, under the migration rules below |
+| `deploy` | `Dockerfile`, `.dockerignore`, `config/deploy.yml`, `.kamal/secrets`, `bin/docker-entrypoint` and the `kamal` line it added to the Gemfile (run `bundle install` afterwards) | Use the app's `bin/gemstack` when testing a local
 checkout so an older globally installed CLI is not selected.
 
 `--dry-run` previews the plan without changing files or regenerating contracts. Removal prompts for
 confirmation; `--yes` is required in scripts. Modified tracked files require `--force`. Edited or
 ambiguous generated routes, unsafe paths, symlinks and detectable remaining Ruby model references are
 refused even with `--force`. Review dynamic references, seeds and custom frontend imports yourself.
-The TypeScript/OpenAPI contract is refreshed after removal unless `--skip-contract` is supplied.
+After removing a resource, model or controller, the TypeScript/OpenAPI contract is refreshed unless
+`--skip-contract` is supplied.
 If that refresh fails, run `bin/gemstack contract` after fixing the application's configuration.
 
 Migration history is read from the selected environment (`-e ENV`, otherwise `GEMSTACK_ENV` or
