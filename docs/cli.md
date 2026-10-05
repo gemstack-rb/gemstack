@@ -182,7 +182,7 @@ gemstack g policy Order                # app/policies/order_policy.rb + test
 ### Deployment files
 
 ```bash
-gemstack g deploy                      # Dockerfile, compose.yaml, Caddyfile, Procfile, .dockerignore
+gemstack g deploy                      # Kamal: Dockerfile, config/deploy.yml, .kamal/secrets (docs/deployment.md)
 ```
 
 ### Field syntax

@@ -2,12 +2,18 @@
 
 All GemStack gems are released together with one version.
 
-## 0.3.5 (Unreleased)
+## 0.3.5
 
-- Add `gemstack update` command to easily update GemStack version in applications
-  - Detects versioned vs path dependencies in Gemfile
-  - Updates Gemfile constraint and runs bundle update
-  - Provides appropriate guidance for both dependency types
+- **`gemstack generate deploy` now sets up [Kamal](https://kamal-deploy.org)** instead of docker compose and
+  Caddy: one production image for every process, `config/deploy.yml` with web, api and jobs roles
+  (kamal-proxy serves one origin, routes `/api` to Ruby and handles HTTPS with Let's Encrypt; zero-downtime
+  deploys), database and Redis accessories, `.kamal/secrets` (references only) and `bin/docker-entrypoint`
+  (migrations before the API starts). It no longer writes `compose.yaml`, `Caddyfile` or `Procfile`;
+  existing files are left alone. See [deployment](docs/deployment.md).
+- `gemstack doctor` fails when `.kamal/secrets` contains a secret's value instead of a reference.
+- New apps' `next.config.ts` builds Next.js's standalone server for the production image.
+- Add `gemstack update`, which updates the `gemstack` version in the Gemfile and runs `bundle update`
+  (apps using a GemStack checkout are told to update the checkout instead).
 
 ## 0.3.4
 

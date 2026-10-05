@@ -18,7 +18,7 @@ class ToolchainTest < Minitest::Test
       "/Users/me/.rubies/ruby-3.4.1/bin/ruby" => :chruby,
       "/opt/homebrew/opt/ruby/bin/ruby" => :homebrew,
       "/usr/bin/ruby" => nil
-    }.each { |path, manager| assert_equal manager, T.ruby_manager(path), path }
+    }.each { |path, manager| manager.nil? ? assert_nil(T.ruby_manager(path), path) : assert_equal(manager, T.ruby_manager(path), path) }
   end
 
   def test_detects_node_managers
@@ -29,7 +29,7 @@ class ToolchainTest < Minitest::Test
       "/Users/me/.asdf/installs/nodejs/22.11.0/bin/node" => :asdf,
       "/Users/me/.volta/tools/image/node/22.11.0/bin/node" => :volta,
       "/usr/bin/node" => nil
-    }.each { |path, manager| assert_equal manager, T.node_manager(path), path }
+    }.each { |path, manager| manager.nil? ? assert_nil(T.node_manager(path), path) : assert_equal(manager, T.node_manager(path), path) }
   end
 
   def test_hints_use_the_manager_or_stay_generic

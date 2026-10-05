@@ -25,7 +25,9 @@ class ChangesTest < Minitest::Test
       "gems/gemstack-auth/test/user_test.rb" => [:test, "auth"],
       "docs/routing.md" => nil,
       "README.md" => nil
-    }.each { |file, expected| assert_equal expected, Changes.classify(file), file }
+    }.each do |file, expected|
+      expected.nil? ? assert_nil(Changes.classify(file), file) : assert_equal(expected, Changes.classify(file), file)
+    end
   end
 
   def test_suites_for_changed_files

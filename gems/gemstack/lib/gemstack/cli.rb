@@ -250,6 +250,6 @@ module GemStack
       generator.run
     end
 
-    include CLIHelpers
+    include Helpers
   end
 end

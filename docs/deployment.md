@@ -32,58 +32,103 @@ responses, eager loading, HSTS on HTTPS requests, `.env` files not loaded
 
 ```bash
 gemstack generate deploy
+bundle install                # adds the kamal gem (development group)
 ```
 
-Generates a complete Kamal deployment configuration:
-- Dockerfile (multi-stage build for Ruby API and Next.js frontend)
-- config/deploy.yml (Kamal configuration with web, API, and optional jobs roles)
-- .kamal/secrets (references to environment variables for sensitive data)
-- bin/docker-entrypoint (handles database migrations on startup)
-- .dockerignore (optimizes Docker build context)
+writes a [Kamal](https://kamal-deploy.org) setup for any server you can reach over SSH (a VPS, a cloud VM,
+bare metal):
 
-Nothing is deployed yet — the files are yours to review, customize, and use.
+| File | What it is |
+| --- | --- |
+| `Dockerfile` | one image for every process: the Ruby API, the jobs worker and Next.js's standalone server |
+| `config/deploy.yml` | roles **web** (Next.js), **api** (Puma) and **jobs** (worker); kamal-proxy; database accessories |
+| `.kamal/secrets` | *references* to secrets (`SECRET_KEY_BASE=$SECRET_KEY_BASE`), never their values; committed to git |
+| `bin/docker-entrypoint` | the api role applies pending migrations before it starts serving |
+| `.dockerignore` | keeps `.git`, `.env*`, `.kamal/`, keys and `node_modules` out of the image |
 
-The images run as a non-root user, contain no `.env` files or secrets (all
-configuration comes from environment variables at runtime), and the API image
-runs database migrations before starting the server.
+How requests flow: kamal-proxy terminates HTTPS (Let's Encrypt) for your domain, sends `/api/*` to the
+api role and everything else to the web role — one origin, as in development. Next.js Server Components
+reach the API directly through the `<service>-api` network alias. Deploys are zero-downtime: the proxy
+switches to new containers once their health checks (`/` and `/api/health`) pass.
 
-Try production mode locally with Kamal:
+The images run as a non-root user and contain no `.env` files or secrets: everything comes from
+environment variables at runtime. The PostgreSQL or MySQL accessory (from `config/database.yml`) runs
+on the same server; Redis is added when realtime needs it; SQLite gets a persistent volume.
+
+### First deploy
+
+1. **A server** with SSH access as `root` (or set `ssh: user:`), ports 80 and 443 open. Kamal installs
+   Docker on it during setup.
+2. **A domain** whose DNS points at the server (Let's Encrypt checks it).
+3. **Edit the `CHANGE` lines** in `config/deploy.yml`: the server IP (every role and accessory), the
+   domain (`proxy: host:` and `APP_URL`), and your registry user.
+4. **A container registry.** Docker Hub by default: create an access token and use it as
+   `KAMAL_REGISTRY_PASSWORD`. For GitHub's registry set `registry: server: ghcr.io`. With a single server
+   you can skip the account entirely with `registry: server: localhost:5555` — Kamal pushes the image to
+   the server over SSH.
+5. **Set the secrets** that `.kamal/secrets` references, in your shell or a password manager
+   (`$(kamal secrets fetch …)`):
+
+   ```bash
+   export KAMAL_REGISTRY_PASSWORD=…                           # the registry token
+   export SECRET_KEY_BASE=$(openssl rand -hex 64)             # keep it: the same value on every deploy
+   export POSTGRES_PASSWORD=$(openssl rand -hex 16)           # PostgreSQL; MYSQL_PASSWORD for MySQL
+   export SMTP_URL=smtp://user:password@smtp.example.com:587  # leave empty until you send email
+   ```
+
+6. **Deploy** from your own machine (Kamal connects to the server; nothing is installed by hand there):
+
+   ```bash
+   bundle exec kamal setup      # first time: Docker, kamal-proxy, the database, then the app
+   bundle exec kamal deploy     # every deploy after that
+   ```
+
+Run `gemstack doctor` before committing: it fails if `.kamal/secrets` contains a value instead of a
+reference.
+
+### Day to day
 
 ```bash
-export SECRET_KEY_BASE=$(openssl rand -hex 64) POSTGRES_PASSWORD=$(openssl rand -hex 16)
-bundle install
-bundle exec kamal setup
+bundle exec kamal deploy       # build, push and switch with zero downtime
+bundle exec kamal logs         # follow the logs (alias in config/deploy.yml)
+bundle exec kamal console      # gemstack console on the server
+bundle exec kamal migrate      # gemstack db:migrate (deploys run it already)
+bundle exec kamal shell        # a shell in the api container
+bundle exec kamal rollback VERSION
 ```
 
-With a real domain, Kamal will automatically obtain and manage Let's
-Encrypt certificates via kamal-proxy.
+Notes:
+
+- **One HTTPS role per domain.** `/api` shares the web role's certificate, so the api role has
+  `ssl: false` — that is expected, requests to `/api` are still HTTPS. It also has
+  `forward_headers: false`, so kamal-proxy sets `X-Forwarded-For`/`-Proto` itself instead of trusting
+  values sent by clients (IP-based rate limits rely on it).
+- **Back up the database.** The accessory keeps its data in a directory on the server; schedule dumps.
+- **Several servers?** List more hosts under a role. Use `config.cache.store = :redis` (`REDIS_URL`) so
+  the cache and auth's rate limits are shared, and move the database to a managed service or its own host.
+  SQLite needs every role on one server.
 
 > Apps created from a GemStack **checkout** reference it with an absolute
 > `path` in the Gemfile, which the image can't see. Run `bundle cache --all`
 > (the Dockerfile copies `vendor/`), or use released gems.
 
-### Platforms
+### Hosting platforms
 
-Kamal supports deployment to any VM or cloud provider with SSH access and Docker:
-
-| Platform | How |
-| --- | --- |
-| **Generic VM/VPS** | `bundle exec kamal setup` then `bundle exec kamal deploy` |
-| **AWS EC2** | SSH to instance, run `bundle exec kamal setup`, then `bundle exec kamal deploy` |
-| **Google Compute Engine** | SSH to instance, run `bundle exec kamal setup`, then `bundle exec kamal deploy` |
-| **DigitalOcean Droplets** | SSH to droplet, run `bundle exec kamal setup`, then `bundle exec kamal deploy` |
-| **Linode** | SSH to instance, run `bundle exec kamal setup`, then `bundle exec kamal deploy` |
-| **Bare metal servers** | SSH to server, run `bundle exec kamal setup`, then `bundle exec kamal deploy` |
+Kamal works with any provider that gives you a Linux server with SSH: Hetzner, DigitalOcean Droplets,
+AWS EC2, Google Compute Engine, Linode, or your own hardware. You always run `kamal` from your machine
+(or CI), never on the server. Presets for platforms that run containers for you (Heroku, Fly.io,
+Render, Railway) are planned; until then the image runs any role through its command
+(`node frontend/server.js`, `bundle exec puma -C config/puma.rb`, `bundle exec gemstack jobs`) and
+the options below cover how `/api` reaches Ruby there.
 
 ## Choose how `/api` reaches Ruby
 
 The browser always calls same-origin `/api/...`, so pick one:
 
-### 1. Reverse proxy (built-in with Kamal)
+### 1. Reverse proxy (what Kamal does)
 
-Kamal includes kamal-proxy which automatically handles SSL termination and
-proxies `/api/*` to your Ruby API and everything else to your Next.js frontend.
-No additional configuration needed.
+kamal-proxy, Caddy, nginx or a platform's router sends `/api/*` to Puma and everything else to
+Next.js. With Kamal this is already configured.
 
 ### 2. Next.js rewrites (alternative approach)
 
@@ -124,13 +169,13 @@ and build the frontend with `NEXT_PUBLIC_GEMSTACK_API_URL=https://api.example.co
 - YJIT is enabled automatically in production (`config.jit`); nothing to set.
 - Add `gem "brotli"` for Brotli compression; with a compressing CDN/proxy in front, either is fine
   (GemStack never re-compresses encoded responses).
-- Several processes/hosts? Kamal handles this natively through role-based configuration.
+- Several processes/hosts? Use `config.cache.store = :redis` (`gem "redis-client"`, `REDIS_URL`).
 - Realtime (SSE) works through Next.js rewrites and Kamal's proxy; see docs/realtime.md.
 - `SECRET_KEY_BASE` (`openssl rand -hex 64`) — needed by storage signatures and any module using
   `GemStack.key_for`; keep it stable across deploys.
 - With auth: `SMTP_URL`, `MAIL_FROM` and `APP_URL` (the frontend's public URL, for email links); run a
-  jobs worker (emails are sent from jobs); Kamal handles HTTPS/TLS termination; call
-  `GemStack::Auth.cleanup!` daily; use Kamal's secrets management for API credentials.
+  jobs worker (emails are sent from jobs); serve over HTTPS (the session cookie is `Secure`); call
+  `GemStack::Auth.cleanup!` daily; use the Redis cache store with several hosts so rate limits are shared.
 - With storage: `STORAGE_SERVICE=s3`, `S3_BUCKET`, `AWS_REGION` (+ credentials), `gem "aws-sdk-s3"`, and
   a bucket CORS rule allowing `PUT` from your site (docs/storage.md).
 - Health check: `GET /api/health` → `200 {"status":"ok"}`.

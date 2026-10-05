@@ -181,9 +181,15 @@ bin/gemstack test
 step "doctor + deploy files"
 bin/gemstack doctor
 bin/gemstack g deploy
-if command -v docker > /dev/null 2>&1 && docker info > /dev/null 2>&1; then
-  SECRET_KEY_BASE=x POSTGRES_PASSWORD=x docker compose config -q && echo "compose.yaml is valid"
-fi
+bundle install --quiet # the kamal gem the generator added
+# Kamal loads and validates config/deploy.yml (roles, proxy, accessories, secrets).
+bundle exec ruby -e '
+  require "kamal"
+  config = Kamal::Configuration.create_from(config_file: Pathname.new("config/deploy.yml"), version: "e2e")
+  roles = config.roles.map(&:name).sort
+  abort "unexpected Kamal roles: #{roles}" unless roles == %w[api jobs web]
+  puts "config/deploy.yml is valid (roles: #{roles.join(", ")})"
+'
 
 step "TypeScript"
 (cd frontend && npx tsc --noEmit)
