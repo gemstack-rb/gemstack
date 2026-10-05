@@ -12,8 +12,9 @@ All GemStack gems are released together with one version.
   existing files are left alone. See [deployment](docs/deployment.md).
 - `gemstack doctor` fails when `.kamal/secrets` contains a secret's value instead of a reference.
 - New apps' `next.config.ts` builds Next.js's standalone server for the production image.
-- Add `gemstack update`, which updates the `gemstack` version in the Gemfile and runs `bundle update`
-  (apps using a GemStack checkout are told to update the checkout instead).
+- Add `gemstack update [VERSION]`: moves the app to the latest GemStack release on rubygems.org (or
+  VERSION) — sets every GemStack gem in the Gemfile to `~> VERSION` and runs `bundle update` for them
+  together; the Gemfile is restored if that fails. Apps on a GemStack checkout are told to update it.
 
 ## 0.3.4
 

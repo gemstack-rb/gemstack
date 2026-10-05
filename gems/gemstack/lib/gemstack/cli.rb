@@ -230,24 +230,17 @@ module GemStack
     desc "version", "Print the GemStack version"
     def version = say("GemStack #{GemStack::VERSION}")
 
-    desc "update [VERSION]", "Update GemStack to the latest version or specified VERSION"
+    desc "update [VERSION]", "Update this app to the latest GemStack release (or VERSION)"
     long_desc <<~DESC
-      Updates the GemStack version in your Gemfile and runs bundle update.
-      Examples:
-        gemstack update          # Update to latest GemStack version
-        gemstack update 0.3.5    # Update to specific version
+      Sets every GemStack gem in the Gemfile (gemstack, gemstack-auth, gemstack-realtime) to
+      "~> VERSION" and runs bundle update for them. Without VERSION, uses the latest release on
+      rubygems.org.
+
+        gemstack update          # the latest release
+        gemstack update 0.3.5    # a specific version
     DESC
     def update(version = nil)
-      target_version = version || GemStack::VERSION
-      unless target_version == GemStack::VERSION
-        say("Warning: You are running gemstack version #{GemStack::VERSION} but trying to update to #{target_version}")
-        say("This command should be run from within the GemStack framework itself to update to #{target_version}")
-        say("For updating an application's GemStack dependency, run this command from the application directory")
-        return
-      end
-
-      generator = UpdateGenerator.new
-      generator.run
+      exit(1) unless UpdateGenerator.new(root: Project.root!, version: version).run
     end
 
     include Helpers

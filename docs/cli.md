@@ -85,6 +85,7 @@ gemstack routes            # list API routes (-g TEXT to filter)
 gemstack test              # run the Ruby tests (or: gemstack test test/models/product_test.rb); alias: t
 gemstack doctor            # check the setup and say how to fix problems (--production before deploying)
 gemstack version
+gemstack update            # move this app to the latest GemStack release (or: gemstack update 0.3.5)
 ```
 
 ## Environments

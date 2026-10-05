@@ -53,7 +53,7 @@ Open **http://localhost:3000** — the starter page calls
 `gemstack dev` prints:
 
 ```text
-  GemStack v0.3.3 · development
+  GemStack v0.3.5 · development
 
   ✓ Gateway    http://localhost:3000  (/api/* → Ruby, everything else → Next.js)
   … Ruby API   starting on 127.0.0.1:52011 (internal)

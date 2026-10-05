@@ -98,6 +98,7 @@ const created: Product = await products.create({ name: "Lamp", price: "9.99" });
 | `gemstack db:create` · `db:migrate` · `db:rollback` · `db:status` · `db:seed` · `db:setup` · `db:reset` · `db:drop` | the database (`gemstack new` already runs `db:create`) |
 | `gemstack add auth\|storage\|realtime` | optional modules |
 | `gemstack doctor` | check the setup and how to fix it (`--production` before deploying) |
+| `gemstack update` | move the app to the latest GemStack release: every GemStack gem in the Gemfile, then `bundle update` |
 | `gemstack contract` | regenerate TypeScript types, API clients, OpenAPI |
 | `gemstack routes` · `gemstack test` / `t` · `gemstack console` / `c` · `gemstack version` | |
 
@@ -113,7 +114,7 @@ server database ([databases](docs/database.md)).
 
 ```bash
 gem install gemstack
-gemstack new shop                  # Gemfile: gem "gemstack", "~> 0.3.3"
+gemstack new shop                  # Gemfile: gem "gemstack", "~> 0.3.5"
 ```
 
 One gem is the framework: routing, controllers, models, background jobs, mail,

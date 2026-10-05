@@ -1,113 +1,130 @@
 # frozen_string_literal: true
 
 require "bundler"
+require "json"
+require "net/http"
 
 module GemStack
   class CLI < Thor
-    # Shared machinery for generators: renders a template directory into a
-    # destination. Files ending in .tt are ERB templates evaluated against the
-    # generator; a leading "dot_" in a file name becomes "." (so dotfiles
-    # survive gem packaging). Existing files are never overwritten silently.
-    #
-    # Applications can override any template by placing a file with the same
-    # relative path in lib/templates/gemstack/<generator>/ (ARCHITECTURE §7).
-    class UpdateGenerator < Generator
+    # `gemstack update [VERSION]` — moves an app to the latest GemStack release
+    # (or VERSION): rewrites every GemStack gem's constraint in the Gemfile to
+    # "~> VERSION" and runs `bundle update` for them, together (the gems pin each
+    # other's exact version). Apps that use a GemStack checkout (`path "…"`)
+    # update the checkout instead.
+    class UpdateGenerator
+      # GemStack's gems, as an app's Gemfile lists them (gemstack-cli comes with gemstack).
+      GEMS = %w[gemstack gemstack-auth gemstack-realtime].freeze
+      VERSION_FORMAT = /\A\d+\.\d+\.\d+\z/
+      LATEST_URL = "https://rubygems.org/api/v1/versions/gemstack/latest.json"
+
+      def initialize(root:, version: nil, output: $stdout, latest: nil, bundle: nil)
+        @root = root
+        @version = version
+        @output = output
+        @latest = latest || -> { latest_release }
+        @bundle = bundle || ->(gems) { Bundler.with_unbundled_env { system("bundle", "update", *gems, chdir: @root) } }
+      end
+
       def run
-        root = Project.root!
-        @output.puts "Checking current GemStack version..."
+        gemfile = read("Gemfile") or return failure("no Gemfile in #{@root}")
+        return checkout(gemfile) if gemfile.match?(/^\s*path\s+["'][^"']+["']\s+do\b/)
 
-        # Read Gemfile
-        gemfile_path = File.join(root, "Gemfile")
-        unless File.exist?(gemfile_path)
-          @output.puts "Error: Gemfile not found in #{root}"
-          return false
+        listed = GEMS.select { |name| gemfile.match?(gem_line(name)) }
+        return failure(%(no `gem "gemstack"` in the Gemfile)) unless listed.include?("gemstack")
+
+        target = @version || @latest.call
+        return failure("#{target.inspect} is not a version (e.g. 0.3.5)") unless target.to_s.match?(VERSION_FORMAT)
+
+        current = locked_version
+        if current == target
+          @output.puts("GemStack is already #{target}.")
+          return true
+        end
+        if current && Gem::Version.new(target) < Gem::Version.new(current) && !@version
+          @output.puts("GemStack #{current} is newer than the latest release (#{target}); nothing to do.")
+          return true
         end
 
-        gemfile_content = File.read(gemfile_path)
-
-        # Check how gemstack is referenced
-        if gemfile_content.match?(/^\s*gem "gemstack"/)
-          # Check if it's within a path block
-          path_match = gemfile_content.match?(/path\s+"[^"]*"\s+do\s*$/m)
-          gemstone_in_path = gemfile_content.match?(/path\s+"[^"]*"\s+do\s*.*^\s*gem "gemstack"/m)
-          if path_match && gemstone_in_path
-            # Path dependency (from local checkout)
-            @output.puts "Your Gemfile uses a path dependency to GemStack:"
-            @output.puts gemfile_content[/path\s+"[^"]*"\s+do\s*/m].strip
-            @output.puts "To update GemStack, you need to update your local GemStack checkout."
-            @output.puts "Run: cd /path/to/your/gemstack/checkout && git pull"
-            true
-          else
-            # Versioned dependency
-            update_versioned_dependency(gemfile_path, gemfile_content)
-          end
-        else
-          @output.puts "Error: Could not find gemstack dependency in Gemfile"
-          false
-        end
+        update(gemfile, listed, current, target)
       end
 
       private
 
-      def update_versioned_dependency(gemfile_path, gemfile_content)
-        current_constraint = determine_current_version_constraint(gemfile_content)
-        @output.puts "Current GemStack version constraint: ~> #{current_constraint}"
+      def update(gemfile, listed, current, target)
+        @output.puts("Updating GemStack #{current || "(not installed yet)"} → #{target}")
+        updated = listed.reduce(gemfile) { |text, name| constrain(text, name, target) }
+        File.write(File.join(@root, "Gemfile"), updated)
+        listed.each { |name| @output.puts(%(  Gemfile  gem "#{name}", "~> #{target}")) }
 
-        # Update to latest version
-        new_constraint = GemStack::VERSION
-        new_content = gemfile_content.sub(
-          /(^\s*gem "gemstack",\s*"~>\s*)[^"]+(")/,
-          "\\1#{new_constraint}\\2"
-        )
+        gems = (listed + ["gemstack-cli"]).uniq
+        @output.puts("  run      bundle update #{gems.join(" ")}")
+        bundled = begin
+          @bundle.call(gems)
+        rescue StandardError
+          File.write(File.join(@root, "Gemfile"), gemfile) # never leave a half-done update behind
+          raise
+        end
+        return bundle_failed(gemfile) unless bundled
 
-        if new_content == gemfile_content
-          @output.puts "Error: Failed to update Gemfile"
-          return false
+        installed = locked_version
+        unless installed == target
+          return failure("bundle update finished but Gemfile.lock has gemstack #{installed.inspect}, not #{target}")
         end
 
-        # Write updated Gemfile
-        File.write(gemfile_path, new_content)
-        @output.puts "Updated Gemfile to use GemStack ~> #{new_constraint}"
+        @output.puts(<<~DONE)
 
-        # Run bundle update
-        run_bundle_update
+          GemStack #{target} is installed. Next:
+            - read what changed: https://github.com/gemstack-rb/gemstack/blob/main/CHANGELOG.md
+            - gemstack doctor
+            - gemstack test
+        DONE
+        true
       end
 
-      def determine_current_version_constraint(gemfile_content)
-        if gemfile_content.match?(/^\s*gem "gemstack",\s*"~>\s*([^"]+)"/)
-          Regexp.last_match(1)
-        else
-          # Try to find any version constraint for gemstack
-          if gemfile_content.match?(/^\s*gem "gemstack",\s*"([^"]*)"/)
-            found_constraint = Regexp.last_match(1)
-            if found_constraint.empty?
-              @output.puts "Warning: Empty version constraint, assuming ~> #{GemStack::VERSION}"
-              GemStack::VERSION
-            else
-              found_constraint
-            end
-          else
-            @output.puts "Warning: Could not determine current version constraint, assuming ~> #{GemStack::VERSION}"
-            GemStack::VERSION
-          end
+      # `gem "name"` with any (or no) version requirement → `gem "name", "~> target"`,
+      # keeping other options (require:, group:) and trailing comments.
+      def constrain(text, name, target)
+        text.gsub(/^(\s*gem\s+["']#{Regexp.escape(name)}["'])((?:\s*,\s*["'][^"']*["'])*)/) do
+          %(#{Regexp.last_match(1)}, "~> #{target}")
         end
       end
 
-      def run_bundle_update
-        @output.puts "Running bundle update gemstack..."
-        if Bundler.with_unbundled_env { system("bundle", "update", "gemstack") }
-          @output.puts "Successfully updated GemStack to version #{GemStack::VERSION}"
-          @output.puts ""
-          @output.puts "Next steps:"
-          @output.puts "  1. Review any release notes for breaking changes"
-          @output.puts "  2. Run your test suite to ensure compatibility"
-          @output.puts "  3. If you have migrations, run: gemstack db:migrate"
-          true
-        else
-          @output.puts "Error: bundle update gemstack failed"
-          @output.puts "You may need to run it manually or resolve conflicts"
-          false
-        end
+      def gem_line(name) = /^\s*gem\s+["']#{Regexp.escape(name)}["']/
+
+      def checkout(gemfile)
+        path = gemfile[/^\s*path\s+["']([^"']+)["']/, 1]
+        @output.puts("This app uses GemStack from a checkout (#{path}): update it there, e.g.")
+        @output.puts("  git -C #{path.delete_suffix("/gems")} pull")
+        true
+      end
+
+      def bundle_failed(original)
+        File.write(File.join(@root, "Gemfile"), original)
+        failure("bundle update failed — the Gemfile is unchanged; see Bundler's message above")
+      end
+
+      def locked_version
+        read("Gemfile.lock")&.[](/^    gemstack \(([^)]+)\)/, 1)
+      end
+
+      def latest_release
+        response = Net::HTTP.get_response(URI(LATEST_URL))
+        raise Thor::Error, "rubygems.org answered #{response.code}" unless response.is_a?(Net::HTTPSuccess)
+
+        JSON.parse(response.body).fetch("version")
+      rescue SocketError, SystemCallError, Timeout::Error, JSON::ParserError => e
+        raise Thor::Error, "Couldn't look up the latest GemStack on rubygems.org (#{e.class}). " \
+                           "Pass a version: gemstack update 0.3.5"
+      end
+
+      def read(relative)
+        path = File.join(@root, relative)
+        File.read(path) if File.file?(path)
+      end
+
+      def failure(message)
+        @output.puts("✗ #{message}")
+        false
       end
     end
   end
