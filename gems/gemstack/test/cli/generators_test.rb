@@ -28,7 +28,7 @@ class AppGeneratorTest < Minitest::Test
     root = generate
 
     expected = %w[
-      .env.example .gitignore .node-version .nvmrc .ruby-version .tool-versions Gemfile README.md
+      .env.example .gemstack/version .gitignore .node-version .nvmrc .ruby-version .tool-versions Gemfile README.md
       app/controllers/application_controller.rb
       app/jobs/application_job.rb app/mailers/application_mailer.rb app/mailers/templates/.keep
       app/models/application_model.rb app/serializers/application_serializer.rb bin/gemstack bin/gsk config.ru

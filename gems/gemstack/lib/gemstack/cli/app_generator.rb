@@ -28,16 +28,18 @@ module GemStack
         @module_name = Inflector.camelize(@name.tr("-", "_"))
         @gemstack_path = options[:gemstack_path] ? File.expand_path(options[:gemstack_path]) : detect_checkout
         @api_path = "/api"
+        self.templates = options[:templates] if options[:templates]
       end
 
-      def version = GemStack::VERSION
+      # (gemstack update renders older releases' templates with their own values.)
+      def version = @options[:version] || GemStack::VERSION
 
       # Pins the app to the Ruby that generated it, in files every version
       # manager reads (.ruby-version: rbenv, rvm, chruby, asdf, mise;
       # .tool-versions: asdf, mise), and Node.js likewise (.node-version,
       # .nvmrc, .tool-versions).
-      def ruby_version = RUBY_VERSION
-      def node_version = @node_version ||= Dev::Toolchain.pinned_node_version
+      def ruby_version = @options[:ruby_version] || RUBY_VERSION
+      def node_version = @node_version ||= @options[:node_version] || Dev::Toolchain.pinned_node_version
       def frontend? = !@options[:skip_frontend]
       def database? = !@options[:skip_database]
 

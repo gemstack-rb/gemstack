@@ -35,7 +35,7 @@ class UpdateCommandTest < Minitest::Test
       bundle_ok
     end
     GemStack::CLI::UpdateGenerator.new(root: @root, version: version, output: @out,
-                                       latest: -> { latest }, bundle: bundle).run
+                                       latest: -> { latest }, bundle: bundle, templates: -> { true }).run
   end
 
   def test_updates_every_gemstack_gem_to_the_latest_release

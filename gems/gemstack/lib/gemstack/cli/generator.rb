@@ -23,7 +23,10 @@ module GemStack
         @created = []
       end
 
-      def template_root(name) = File.join(TEMPLATES, name)
+      # Another GemStack version's templates/ (gemstack update compares them).
+      attr_writer :templates
+
+      def template_root(name) = File.join(@templates || TEMPLATES, name)
 
       # Ruby core/stdlib names an app class must not reuse (a top-level class
       # named Digest or Set would collide with Ruby's own). Constants already

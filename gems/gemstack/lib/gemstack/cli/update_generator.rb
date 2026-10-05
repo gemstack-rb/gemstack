@@ -17,12 +17,20 @@ module GemStack
       VERSION_FORMAT = /\A\d+\.\d+\.\d+\z/
       LATEST_URL = "https://rubygems.org/api/v1/versions/gemstack/latest.json"
 
-      def initialize(root:, version: nil, output: $stdout, latest: nil, bundle: nil)
+      # The first version whose `gemstack update --templates` exists.
+      TEMPLATE_UPDATES_SINCE = Gem::Version.new("0.3.6")
+
+      def initialize(root:, version: nil, output: $stdout, latest: nil, bundle: nil, templates: nil)
         @root = root
         @version = version
         @output = output
         @latest = latest || -> { latest_release }
         @bundle = bundle || ->(gems) { Bundler.with_unbundled_env { system("bundle", "update", *gems, chdir: @root) } }
+        # Runs in the app's updated bundle, so the new version renders its own templates.
+        # (The lockfile's version can be newer than the app's templates, so it isn't passed on.)
+        @templates = templates || lambda {
+          Bundler.with_unbundled_env { system("bundle", "exec", "gemstack", "update", "--templates", chdir: @root) }
+        }
       end
 
       def run
@@ -71,9 +79,11 @@ module GemStack
           return failure("bundle update finished but Gemfile.lock has gemstack #{installed.inspect}, not #{target}")
         end
 
+        @output.puts("\nGemStack #{target} is installed.\n\n")
+        update_templates(target)
         @output.puts(<<~DONE)
 
-          GemStack #{target} is installed. Next:
+          Next:
             - read what changed: https://github.com/gemstack-rb/gemstack/blob/main/CHANGELOG.md
             - gemstack doctor
             - gemstack test
@@ -87,6 +97,12 @@ module GemStack
         text.gsub(/^(\s*gem\s+["']#{Regexp.escape(name)}["'])((?:\s*,\s*["'][^"']*["'])*)/) do
           %(#{Regexp.last_match(1)}, "~> #{target}")
         end
+      end
+
+      def update_templates(target)
+        return if Gem::Version.new(target) < TEMPLATE_UPDATES_SINCE
+
+        @templates.call || @output.puts("Templates weren't updated; run: gemstack update --templates")
       end
 
       def gem_line(name) = /^\s*gem\s+["']#{Regexp.escape(name)}["']/

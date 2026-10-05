@@ -25,6 +25,7 @@ module GemStack
     require_relative "cli/deploy_generator"
     require_relative "cli/add_generator"
     require_relative "cli/update_generator"
+    require_relative "cli/template_update"
     require_relative "cli/commands/db"
     require_relative "cli/commands/jobs"
     require_relative "cli/console_methods"
@@ -231,17 +232,33 @@ module GemStack
     desc "version", "Print the GemStack version"
     def version = say("GemStack #{GemStack::VERSION}")
 
-    desc "update [VERSION]", "Update this app to the latest GemStack release (or VERSION)"
+    desc "update [VERSION]", "Update this app to the latest GemStack release (or VERSION), templates included"
     long_desc <<~DESC
       Sets every GemStack gem in the Gemfile (gemstack, gemstack-auth, gemstack-realtime) to
       "~> VERSION" and runs bundle update for them. Without VERSION, uses the latest release on
-      rubygems.org.
+      rubygems.org. Then updates the files `gemstack new` wrote (config, bin/, frontend setup…):
+      files the release didn't change are left alone, new ones are created, ones you never edited
+      are updated, and for ones you edited you choose: overwrite, skip, see the diff, or FILE.new.
 
-        gemstack update          # the latest release
-        gemstack update 0.3.5    # a specific version
+        gemstack update                       # the latest release
+        gemstack update 0.3.6                 # a specific version
+        gemstack update --templates --dry-run # only the template step, preview
+        gemstack update --templates --from 0.3.5
     DESC
+    method_option :templates, type: :boolean, default: false, desc: "Only update the app's templates"
+    method_option :from, type: :string, desc: "--templates: the GemStack version the app's files came from"
+    method_option :dry_run, type: :boolean, default: false, desc: "--templates: show what would change"
     def update(version = nil)
+      return update_templates if options[:templates]
+
       exit(1) unless UpdateGenerator.new(root: Project.root!, version: version).run
+    end
+
+    no_commands do
+      def update_templates
+        root = Project.ensure_bundle!(self.class.argv) # the app's installed GemStack renders its templates
+        TemplateUpdate.new(root: root, from: options[:from], dry_run: options[:dry_run]).run
+      end
     end
 
     include Helpers

@@ -2,8 +2,16 @@
 
 All GemStack gems are released together with one version.
 
-## Unreleased
+## 0.3.6
 
+- **`gemstack update` updates the app's templates too.** After moving the gems, it brings the files
+  `gemstack new` wrote (config, `bin/`, frontend setup, …) up to the new version, comparing your copy with
+  the old and the new version's templates: files the release didn't change are left alone, new files are
+  created, files you never edited are updated, and for files you edited you choose — overwrite, skip, see
+  the diff, or save the new version as `FILE.new` (never overwritten without asking; scripts get a list).
+  `gemstack update --templates [--from VERSION] [--dry-run]` runs that step alone. Apps record the
+  templates they're on in `.gemstack/version` (new apps from this release; older apps are compared with
+  the version in their `Gemfile.lock`).
 - `gemstack destroy` reverses every generator: besides resources, models and controllers it now removes
   jobs, policies, migrations (same safety rules: only pending, uncommitted ones unless
   `--remove-migrations`) and the Kamal deploy files (`gemstack destroy deploy`, which also removes the

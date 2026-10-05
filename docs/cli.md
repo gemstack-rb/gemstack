@@ -103,8 +103,35 @@ gemstack routes            # list API routes (-g TEXT to filter)
 gemstack test              # run the Ruby tests (or: gemstack test test/models/product_test.rb); alias: t
 gemstack doctor            # check the setup and say how to fix problems (--production before deploying)
 gemstack version
-gemstack update            # move this app to the latest GemStack release (or: gemstack update 0.3.5)
+gemstack update            # move this app to the latest GemStack release, templates included (see below)
 ```
+
+## Upgrading GemStack
+
+```bash
+gemstack update                          # the latest release (or: gemstack update 0.3.6)
+gemstack update --templates --dry-run    # preview only the template step
+gemstack update --templates --from 0.3.5 # rerun it, comparing with 0.3.5's templates
+```
+
+`gemstack update` sets every GemStack gem in the Gemfile to the new version and runs `bundle update`
+(the Gemfile is restored if that fails). Then it updates the files `gemstack new` wrote — config,
+`bin/`, the frontend setup — by comparing three versions of each: yours, the old release's template and
+the new one's.
+
+| The file… | What happens |
+| --- | --- |
+| didn't change between the two releases | left alone, even if you edited it |
+| is new in this release | created |
+| changed, and you never edited it | updated |
+| changed, and you edited it | you choose: **o**verwrite, **s**kip, see the **d**iff, or save the new version as `FILE.new` |
+| changed, and you deleted it | stays deleted |
+
+Nothing you edited is overwritten without asking; outside a terminal (scripts, CI) those files are listed
+for you instead. The app records the templates it's on in `.gemstack/version` (commit it). The old
+release's templates come from the installed gem, or are downloaded from rubygems.org; if neither works,
+files that differ are offered, never updated automatically. Files `gemstack add` and the generators wrote
+(auth, realtime, resources…) are yours and aren't part of this step.
 
 ## Environments
 

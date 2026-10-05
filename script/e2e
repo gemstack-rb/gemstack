@@ -191,6 +191,11 @@ test -z "$(find db/migrations -name '*_add_summary_to_products.rb' -print)"
 bin/gemstack db:migrate
 bin/gemstack test
 
+step "template update on a brand-new app"
+test "$(cat .gemstack/version)" = "$(ruby -I"$ROOT/gems/gemstack/lib" -e 'require "gemstack/version"; print GemStack::VERSION')"
+bin/gemstack update --templates --dry-run | tee "$WORK/templates.log"
+grep -q "nothing to update" "$WORK/templates.log"
+
 step "doctor + deploy files"
 bin/gemstack doctor
 bin/gemstack g deploy
