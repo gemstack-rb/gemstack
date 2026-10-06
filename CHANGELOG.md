@@ -2,25 +2,20 @@
 
 All GemStack gems are released together with one version.
 
-## Unreleased
-
-- Next.js's standalone server reads the root `.env` too: the loader moved to
-  `frontend/lib/gemstack/root-env.cjs`, which `next.config.ts` requires and the standalone server preloads
-  (`npm run start:standalone`, i.e. `node -r ./lib/gemstack/root-env.cjs .next/standalone/server.js`; the
-  Docker image's web command does the same). Before, server-side code under `node server.js` only saw real
-  environment variables. Existing apps: `gemstack update` adds the file and updates `next.config.ts` and
-  `package.json`; re-run `gemstack generate deploy` for the image.
-
 ## 0.4.1
 
-- **One `.env` for the API and the frontend**: the root one. `frontend/next.config.ts` loads the root
-  `.env` files (same order as the API, real environment first), so `next build` and `next start` get
-  `NEXT_PUBLIC_*` values from it wherever they run — before, a production build outside `gemstack dev`
-  compiled them in as undefined. The API now loads the root `.env` files in production too, when present
-  (real environment variables still win). The Docker image built by `gemstack generate deploy` gets the
-  root `.env`'s `NEXT_PUBLIC_*` lines as a build secret for `next build` (`.kamal/secrets`:
-  `GEMSTACK_PUBLIC_ENV`), never stored in the image. Existing apps: `gemstack update` updates
-  `next.config.ts`; re-run `gemstack generate deploy` for the Docker/Kamal part.
+- **One `.env` for the API and the frontend**: the root one. `frontend/lib/gemstack/root-env.cjs` loads the
+  root `.env` files for Next.js (same order as the API, real environment first): `next.config.ts` requires
+  it, so `next dev`, `next build` and `next start` get the values wherever they run, and the standalone
+  server preloads it (`npm run start:standalone`, i.e.
+  `node -r ./lib/gemstack/root-env.cjs .next/standalone/server.js`). Before, a production build outside
+  `gemstack dev` compiled `NEXT_PUBLIC_*` values in as undefined, and the standalone server's server-side
+  code only saw real environment variables. The API now loads the root `.env` files in production too, when
+  present (real environment variables still win). The Docker image built by `gemstack generate deploy` gets
+  the root `.env`'s `NEXT_PUBLIC_*` lines as a build secret for `next build` (`.kamal/secrets`:
+  `GEMSTACK_PUBLIC_ENV`), never stored in the image, and its web command preloads the loader too. Existing
+  apps: `gemstack update` adds the loader and updates `next.config.ts` and `package.json`; re-run
+  `gemstack generate deploy` for the Docker/Kamal part.
 
 ## 0.4.0
 
