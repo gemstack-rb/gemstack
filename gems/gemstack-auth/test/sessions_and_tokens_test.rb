@@ -86,3 +86,21 @@ class SessionsAndTokensTest < AuthTestCase
     assert_equal 1, Tokens.dataset.count
   end
 end
+
+# GemStack::Auth.user_from: the signed-in user outside controllers (realtime's identify).
+class UserFromRequestTest < AuthTestCase
+  def request(headers = {}) = Rack::Request.new(Rack::MockRequest.env_for("/api/realtime", headers))
+
+  def test_session_cookie_and_api_token
+    user = create_user
+    session = GemStack::Auth::Sessions.create(user.id)
+    token, = GemStack::Auth::Tokens.issue(user.id, purpose: "api")
+    cookie = GemStack::Auth.config.cookie_name
+
+    assert_equal user.id, GemStack::Auth.user_from(request("HTTP_COOKIE" => "#{cookie}=#{session}")).id
+    assert_equal user.id, GemStack::Auth.user_from(request("HTTP_AUTHORIZATION" => "Bearer #{token}")).id
+    assert_nil GemStack::Auth.user_from(request("HTTP_COOKIE" => "#{cookie}=forged"))
+    assert_nil GemStack::Auth.user_from(request("HTTP_AUTHORIZATION" => "Bearer forged"))
+    assert_nil GemStack::Auth.user_from(request)
+  end
+end

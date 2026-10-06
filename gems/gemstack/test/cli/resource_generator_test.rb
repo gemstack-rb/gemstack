@@ -304,6 +304,11 @@ class AddGeneratorTest < Minitest::Test
                     %(  gem "gemstack-jobs"\n  gem "gemstack-realtime"\n  gem "gemstack-schema"\nend) # sorted
     assert File.exist?("#{@root}/config/channels.rb")
     assert File.exist?("#{@root}/frontend/lib/gemstack/realtime.ts")
+    client = File.read("#{@root}/frontend/lib/gemstack/realtime.ts")
+
+    assert_includes client, "new WebSocket(", "WebSockets are the realtime transport"
+    refute_includes client, "EventSource"
+    assert_includes File.read("#{@root}/config/channels.rb"), "receive"
     helper = File.read("#{@root}/test/test_helper.rb")
 
     assert_includes helper, %(require "gemstack/testing"\nrequire "gemstack/realtime/testing")

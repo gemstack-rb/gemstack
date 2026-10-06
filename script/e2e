@@ -53,7 +53,13 @@ step "add realtime"
 bin/gemstack add realtime
 cat > config/channels.rb <<'RUBY'
 GemStack.channels do
+  identify { |_request| { id: "e2e-client", name: "E2E" } }
   channel "products"
+  channel "e2e", presence: true
+  receive "e2e" do |message|
+    GemStack.broadcast("e2e", "echoed", message.data)
+    message.data
+  end
   channel "orders:*" do |id, request|
     request.get_header("HTTP_AUTHORIZATION") == "Bearer #{id}"
   end
@@ -83,12 +89,21 @@ cat > frontend/components/LiveProducts.tsx <<'TSX'
 "use client";
 import { useState } from "react";
 import type { Product } from "@/lib/api/generated";
-import { useRealtime } from "@/lib/gemstack/realtime";
+import { realtime, usePresence, useRealtime, useRealtimeStatus } from "@/lib/gemstack/realtime";
 
 export function LiveProducts() {
   const [names, setNames] = useState<string[]>([]);
   useRealtime<Product>("products", (event) => setNames((current) => [...current, event.data.name]));
-  return <ul>{names.map((name) => <li key={name}>{name}</li>)}</ul>;
+  const here = usePresence<{ name: string }>("e2e");
+  const status = useRealtimeStatus();
+  const say = () => realtime.send<{ text: string }>("e2e", "echo", { text: "hi" }).then((reply) => reply.text);
+  return (
+    <div data-status={status}>
+      <ul>{names.map((name) => <li key={name}>{name}</li>)}</ul>
+      <p>{here.map((person) => person.meta?.name).join(", ")}</p>
+      <button onClick={say}>say</button>
+    </div>
+  );
 }
 TSX
 
@@ -102,6 +117,48 @@ test "$(ls db/migrations | grep -c create_auth_tables)" = 1
 step "migrate + Ruby tests"
 bin/gemstack db:migrate
 bin/gemstack test
+
+step "realtime client over WebSocket (subscribe, send, presence, reconnect + replay)"
+PORT_RT=$(ruby -rsocket -e 's = TCPServer.new("127.0.0.1", 0); print s.addr[1]; s.close')
+bin/gemstack server -p "$PORT_RT" > "$WORK/realtime-server.log" 2>&1 &
+SERVER_PID=$!
+for _ in $(seq 60); do curl -fsS "http://127.0.0.1:$PORT_RT/api/health" > /dev/null 2>&1 && break; sleep 0.5; done
+(cd frontend && npx tsc --outDir "$WORK/rt" --module commonjs --target es2022 --skipLibCheck --esModuleInterop \
+  lib/gemstack/realtime.ts lib/gemstack/client.ts)
+cat > "$WORK/realtime-client.js" <<'JS'
+const port = process.argv[2];
+global.window = { location: { protocol: "http:", host: `127.0.0.1:${port}` }, addEventListener() {} };
+const { realtime } = require(`${process.argv[3]}/realtime.js`);
+const until = (check, what) => new Promise((resolve, reject) => {
+  const started = Date.now();
+  const poll = () => (check() ? resolve() : Date.now() - started > 8000 ? reject(new Error(`timeout: ${what}`)) : setTimeout(poll, 20));
+  poll();
+});
+(async () => {
+  const events = [];
+  realtime.subscribe("e2e", (event) => events.push(event));
+  await until(() => realtime.status === "open", "connected");
+  const reply = await realtime.send("e2e", "echo", { text: "hi" });
+  if (reply.text !== "hi") throw new Error(`reply ${JSON.stringify(reply)}`);
+  await until(() => events.some((e) => e.event === "echoed" && e.data.text === "hi"), "broadcast from receive");
+  await until(() => realtime.presenceOf("e2e").some((p) => p.id === "e2e-client"), "presence");
+
+  // Drop the connection and broadcast while it's down: the client reconnects,
+  // resubscribes with its last event id and gets the missed event replayed.
+  const other = new WebSocket(`ws://127.0.0.1:${port}/api/realtime`);
+  await new Promise((resolve) => other.addEventListener("message", (m) => JSON.parse(m.data).type === "welcome" && resolve()));
+  other.send(JSON.stringify({ type: "subscribe", channel: "e2e" }));
+  realtime.socket.close();
+  await until(() => realtime.status === "reconnecting", "noticed the drop");
+  other.send(JSON.stringify({ type: "message", channel: "e2e", event: "echo", data: { text: "while away" } }));
+  await until(() => events.some((e) => e.data && e.data.text === "while away"), "replayed after reconnect");
+  if (realtime.status !== "open") throw new Error(`status ${realtime.status}`);
+  console.log("realtime client OK");
+  process.exit(0);
+})().catch((error) => { console.error(error); process.exit(1); });
+JS
+NODE_PATH="$PWD/frontend/node_modules" node "$WORK/realtime-client.js" "$PORT_RT" "$WORK/rt" || { tail -30 "$WORK/realtime-server.log"; kill $SERVER_PID; exit 1; }
+kill $SERVER_PID; wait $SERVER_PID 2> /dev/null || true
 
 step "destroy preserves data, migrations and custom files"
 bin/gemstack g resource Post title:string body:text:optional --skip-contract

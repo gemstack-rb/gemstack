@@ -55,6 +55,20 @@ module GemStack
 
       def db = DB.connection
 
+      # The signed-in user of a Rack request — a Bearer API token or the session
+      # cookie, like controllers' current_user — or nil. For code outside
+      # controllers, e.g. config/channels.rb:
+      #   identify { |request| GemStack::Auth.user_from(request)&.then { |u| { id: u.id } } }
+      def user_from(request)
+        if (token = request.get_header("HTTP_AUTHORIZATION").to_s[/\ABearer\s+(\S+)\z/i, 1])
+          row = Tokens.find(token, purpose: "api") or return nil
+          user_class[row[:user_id]]
+        elsif (cookie = request.cookies[config.cookie_name])
+          session = Sessions.find(cookie) or return nil
+          user_class[session[:user_id]]
+        end
+      end
+
       # Deletes expired sessions and tokens; run it daily from a job.
       def cleanup!
         now = Time.now
