@@ -85,8 +85,10 @@ gemstack jobs                              # all queues, 5 threads
 gemstack jobs -q mailers,default -c 10     # specific queues, 10 threads
 ```
 
-- In development, **`gemstack dev` runs a worker for you** (once the jobs table
-  exists) and restarts it when `app/` changes.
+- In development, **`gemstack dev` runs a worker for you** and restarts it when
+  `app/` changes. Every app with a database gets the jobs table from `gemstack
+  new` (apps created before that get it with their first `gemstack g job`).
+  Jobs still only run in the background when you call `perform_later`.
 - Workers claim jobs with `FOR UPDATE SKIP LOCKED`, so any number of worker
   processes can share a queue without ever running the same job twice at once.
 - `SIGTERM`/`SIGINT` let running jobs finish for `shutdown_timeout` (25 s), then

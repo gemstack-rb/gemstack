@@ -8,12 +8,13 @@ GemStack adds only three things:
 |---|---|
 | `lib/gemstack/client.ts` | the API client runtime (yours to edit) |
 | `app/providers.tsx` | TanStack Query provider with sensible retry defaults |
-| `next.config.ts` | `/api/*` rewrites for gateway-less production |
+| `next.config.ts` | `/api/*` rewrites for gateway-less production (HTTP only — not the realtime WebSocket) |
 
 ## One origin
 
 In development the gateway on `localhost:3000` sends `/api/*` to Ruby and
-everything else — pages, assets, the `/_next/hmr` WebSocket — to Next.js.
+everything else — pages, assets, the `/_next/hmr` WebSocket — to Next.js. The
+realtime WebSocket is `/api/realtime`, so it goes to Ruby like any API call.
 Browser code calls **relative** URLs, so there is no CORS, no API base URL and
 no proxy configuration.
 

@@ -4,6 +4,23 @@ All GemStack gems are released together with one version.
 
 ## Unreleased
 
+- **Realtime runs over WebSockets.** `gemstack add realtime` gives one WebSocket per browser tab on
+  `/api/realtime` (same origin; the dev gateway and kamal-proxy route it with `/api`), carrying
+  subscriptions, broadcasts, browser → server messages (`realtime.send` → `receive` in
+  `config/channels.rb`, with replies), presence (`channel "rooms:*", presence: true`, `usePresence`,
+  `GemStack::Realtime.present_on`), connection identity (`identify`) and replay after reconnects. The
+  browser client reconnects with backoff, resubscribes and de-duplicates; Origins are checked and
+  messages are size- and rate-limited. `GemStack.broadcast`, channel rules and brokers are unchanged.
+  The Server-Sent Events stream still answers for apps on the old `realtime.ts` (deprecated) — replace
+  that file with the new client (docs/realtime.md).
+- `GemStack::Auth.user_from(request)`: the signed-in user outside controllers (session cookie or API
+  token), e.g. for realtime's `identify`.
+- Background jobs work from `gemstack new`: apps with a database get the jobs table, `gemstack new`
+  migrates, and `gemstack dev` runs a worker from the first run. Jobs still run only via `perform_later`.
+- New apps include `gem "brotli"`, so responses are Brotli-compressed for browsers that accept it
+  (gzip otherwise; compression was already on by default).
+- PostgreSQL is the recommended production database: `config/database.yml`, the Kamal config and
+  `gemstack doctor --production` say how to use it (`DATABASE_URL`). SQLite stays the development default.
 - GemStack now describes itself as "a fast, modular Ruby web application framework with a Next.js frontend"
   (README, gem READMEs and the gem summary on rubygems.org).
 

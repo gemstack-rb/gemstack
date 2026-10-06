@@ -12,13 +12,14 @@ presented as a single application.
                      Browser
                         │
                         ▼
-                 localhost:3000            (one public origin)
+                 localhost:3000            (one public origin: HTTP and WebSockets)
                         │
-                 GemStack Gateway          (dev: gemstack dev; prod: your proxy or Next rewrites)
+                 GemStack Gateway          (dev: gemstack dev; prod: kamal-proxy or your reverse proxy)
                   /            \
-      everything else          /api/*
+      everything else          /api/*  (incl. the /api/realtime WebSocket)
                 /                \
           Next.js (TS)       GemStack Ruby API (Rack + Puma)
+       internal port          internal port
                                    │
                      SQLite · PostgreSQL · MySQL
 ```
@@ -63,7 +64,7 @@ released with one version:
 | `gemstack` | the framework: every module below except auth and realtime, the CLI code and generators | rack, json, sequel, mail, erubi, thor, puma, zeitwerk, bigdecimal, gemstack-cli |
 | `gemstack-cli` | only the `gemstack` executable (its code is `gemstack/cli` in the gemstack gem) | none |
 | `gemstack-auth` | authentication and policies — `gemstack add auth` | gemstack, argon2 (native) |
-| `gemstack-realtime` | Server-Sent Events — `gemstack add realtime` | gemstack, nio4r (native) |
+| `gemstack-realtime` | WebSockets: channels, presence, browser messages — `gemstack add realtime` | gemstack, nio4r (native) |
 
 Auth and realtime are separate gems only because of their native
 dependencies. The names `gemstack-core`, `-cache`, `-schema`, `-http`, `-db`,
@@ -110,7 +111,7 @@ require graph):
 | `jobs` | `GemStack::Job`, adapters (database/async/inline/test/sidekiq), worker, test helpers |
 | `mail` | `GemStack::Mailer`, ERB templates (HTML-escaped), :smtp/:log/:test delivery, `deliver_later` job, test helpers |
 | `storage` | `GemStack::Storage`: disk and S3 services, signed URLs, direct uploads, disk endpoint, test helpers |
-| `realtime` *(gem)* | `GemStack.broadcast`, channels, SSE endpoint (hijack + nio4r), brokers, test helpers |
+| `realtime` *(gem)* | `GemStack.broadcast`, channels, WebSocket endpoint (hijack + nio4r), presence, brokers, test helpers |
 | `auth` *(gem)* | Argon2id passwords, DB sessions (cookie), API/reset/verification tokens, controller helpers, CSRF origin check, `rate_limit`, `GemStack::Policy` |
 | `contract` | contract IR from routes/schemas/serializers → TypeScript types + clients, OpenAPI 3.1 |
 | `dev` | dev gateway, process supervisor, file watcher, background contract regeneration, toolchain detection |
@@ -236,13 +237,15 @@ in production they never do.
 
 ## 5. Single-origin development architecture
 
-`gemstack dev` starts three things under one supervisor:
+`gemstack dev` starts these under one supervisor. Only the gateway listens on
+the public port; Next.js and Puma listen on loopback ports the browser never sees:
 
 ```text
 gemstack dev
   ├── Gateway        TCP listener on :3000 (PORT)       — in-process thread pool
   ├── Ruby API       bundle exec puma -b tcp://127.0.0.1:<free port>
-  └── Next.js        next dev -H 127.0.0.1 -p <free port>
+  ├── Next.js        next dev -H 127.0.0.1 -p <free port>
+  └── Jobs worker    bundle exec gemstack jobs           — when the app uses the database queue
 ```
 
 - The internal ports are chosen automatically (free ephemeral ports). The
@@ -251,8 +254,8 @@ gemstack dev
   prefix (`api_path` → Ruby, everything else → Next.js), adds
   `X-Forwarded-For/Proto/Host`, then **pipes raw bytes** in both directions.
   Because it proxies at the byte level after routing, it transparently
-  supports request/response streaming, Server-Sent Events, and WebSocket
-  upgrades (Next.js HMR on `/_next/hmr` today, GemStack realtime later).
+  supports request/response streaming and WebSocket upgrades: Next.js HMR
+  (`/_next/…`) goes to Next.js, the realtime WebSocket (`/api/realtime`) to Puma.
 - To keep routing correct per request the gateway uses one upstream
   connection per request (`Connection: close` towards the upstream). This is a
   deliberate dev-only simplicity trade-off; localhost connection setup is ~0.1ms.
@@ -274,25 +277,28 @@ gemstack dev
   (the internal Ruby URL) into the Next.js environment; the vendored client
   (`frontend/lib/gemstack/client.ts`) uses it automatically on the server.
 
-## 6. Production architecture **[built: config; planned: `gemstack deploy` helpers]**
+## 6. Production architecture — see docs/deployment.md
 
-Default: one public origin.
+Default: one public origin, owned by a proxy; Next.js and Puma run internally.
 
 ```text
-https://example.com ──▶ reverse proxy / platform router
-                         ├── /api/*  → Ruby (puma, config/puma.rb)
-                         └── /*      → next start
+https://example.com ──▶ kamal-proxy (gemstack generate deploy) / reverse proxy
+                         ├── /api/*  → Ruby (puma, config/puma.rb) — HTTP and the realtime WebSocket
+                         └── /*      → Next.js (standalone server)
 ```
 
 Supported shapes, in order of preference:
 
-1. **Reverse proxy** (Caddy/nginx/Traefik/a platform's router) in front of both
-   processes. Best for WebSockets and streaming.
+1. **A proxy routing by path** — kamal-proxy (what `gemstack generate deploy`
+   sets up), Caddy, nginx, Traefik or a platform router. Required for
+   realtime: WebSocket upgrades go straight to Puma.
 2. **Next.js rewrites** — the generated `next.config.ts` rewrites `/api/:path*`
    to `GEMSTACK_API_URL`. Deploy Next.js publicly and the Ruby API privately;
-   still single origin, no extra proxy. (SSE works; WebSockets need option 1.)
+   still single origin, no extra proxy — but rewrites don't carry WebSocket
+   upgrades, so realtime needs option 1 or 3.
 3. **Separate domains** (`api.example.com`) — set `NEXT_PUBLIC_GEMSTACK_API_URL`
-   on the frontend and `config.http.cors.origins` on the backend.
+   on the frontend and `config.http.cors.origins` on the backend (the realtime
+   Origin check accepts those origins too).
 
 ---
 
@@ -371,9 +377,10 @@ Executor (shared by all adapters): performed | retry (backoff) | discarded | fai
 
 - `Job` is a thin class API (`queue`, `priority`, `retry_on`, `discard_on`,
   `perform_later`, `set`, `perform_now`); adapters are swappable.
-- The `gemstack_jobs` table appears with the first `generate job`.
+- Every app with a database gets the `gemstack_jobs` table from `gemstack new`.
 - `gemstack dev` runs a worker when the app uses the database queue, and
-  restarts it when `app/` changes.
+  restarts it when `app/` changes. Work is asynchronous only through
+  `perform_later`; the adapter is `config.jobs.adapter`.
 
 ## 10. Realtime — see docs/realtime.md
 
@@ -383,20 +390,28 @@ GemStack.broadcast(channel, event, data)
    ▼
 broker.publish ── :postgres NOTIFY (transactional) | :redis PUBLISH | :memory | :test
    ▼  (every API process: one LISTEN / SUBSCRIBE thread)
-Hub.deliver ── channel → identity set of Connections, bounded replay history
+Hub.deliver ── channel → connections, bounded replay history; presence announcements → Presence
    ▼
-Connection.push (non-blocking write, buffered) ◀── Streamer: one nio4r loop per process
-                                                   (writable flushes, EOF detection, heartbeats)
-GET /api/realtime?channels=a,b ── Middleware: validate, authorize (config/channels.rb),
-                                  replay since Last-Event-ID or send gemstack.gap,
-                                  gemstack.denied for refused channels, Rack full hijack
+WebSocket::Connection ◀── Streamer: one nio4r loop per process (reads frames, non-blocking
+   │                       writes, pings, drops silent/slow clients)
+   └─ subscribe / unsubscribe / message ──▶ Dispatcher (thread pool, per-connection order,
+                                            application interlock) → config/channels.rb
+GET /api/realtime + Upgrade ── Middleware: handshake, Origin check, identify, Rack full hijack
 ```
 
 - Optional: added with `gemstack add realtime`. Without it there's no
   middleware, no threads, no client code.
-- The browser client (`frontend/lib/gemstack/realtime.ts`) keeps one
-  EventSource per tab, multiplexes channels, and carries `last_event_id` across
-  channel-set changes.
+- WebSockets are the transport. Framing (RFC 6455) is `WebSocket::Codec`;
+  the JSON protocol is in `WebSocket::Connection`. A `GET` without an upgrade
+  still serves the deprecated Server-Sent Events stream of the old client.
+- `config/channels.rb`: `identify` (per connection), `channel` rules
+  (deny by default, `presence: true`), `receive` handlers (browser → server).
+- Presence is replicated through the broker with periodic refreshes; entries
+  from a process that stops refreshing lapse.
+- The browser client (`frontend/lib/gemstack/realtime.ts`) keeps one WebSocket
+  per tab, resubscribes with the last event id after reconnecting (backoff with
+  jitter), and exposes `useRealtime`, `usePresence`, `useRealtimeStatus` and
+  `realtime.send`.
 
 ## 11. Performance strategy
 

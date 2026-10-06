@@ -75,8 +75,8 @@ at any level, so higher gzip levels buy almost nothing there either.
 
 ## Compression
 
-On by default; no configuration needed. Install `gem "brotli"` for Brotli,
-otherwise gzip is used. If a CDN or reverse proxy already compresses, keep
+On by default; no configuration needed. Brotli needs `gem "brotli"` (new apps
+include it); otherwise gzip is used. If a CDN or reverse proxy already compresses, keep
 GemStack's (it skips already-encoded responses) or turn one off:
 
 ```ruby

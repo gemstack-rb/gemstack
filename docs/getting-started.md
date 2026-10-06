@@ -42,8 +42,9 @@ cd shop
 gemstack dev
 ```
 
-`gemstack new` writes the app, runs `bundle install`, creates the database
-(`gemstack db:create`), runs `npm install`, and initialises git. With
+`gemstack new` writes the app, runs `bundle install`, creates and migrates the
+database (`gemstack db:create db:migrate` — the jobs table is there from the
+start), runs `npm install`, and initialises git. With
 PostgreSQL or MySQL, put credentials in `config/database.yml` (or
 `DATABASE_URL` / `TEST_DATABASE_URL` in `.env`) and run `gemstack db:create`.
 
@@ -66,8 +67,11 @@ gemstack│ ✓ Next.js ready (1.3s)
 api     │ 12:45:34.040 INFO  GET /api/health status=200 ms=3.9 id=7e6c…
 ```
 
-The internal ports are chosen automatically; you only ever use port 3000
-(`PORT=4000 gemstack dev` to change it). Ctrl-C stops everything.
+The gateway owns port 3000 — the only one you use — and routes `/api/*` (HTTP
+and the realtime WebSocket) to the Ruby API and everything else to Next.js,
+both on internal ports chosen automatically (`PORT=4000 gemstack dev` changes
+the public one). A jobs worker runs alongside for `perform_later`. Ctrl-C stops
+everything.
 
 ## Add a resource
 

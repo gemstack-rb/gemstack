@@ -72,10 +72,19 @@ Replace it entirely with `GemStack.logger = MyLogger.new` (it must respond to
 |---|---|
 | `config.http.compression.enabled` | `true` |
 | `config.http.compression.min_size` | `1024` bytes |
-| `config.http.compression.encodings` | `%w[br gzip]` (Brotli needs the `brotli` gem) |
+| `config.http.compression.encodings` | `%w[br gzip]` — preference order; Brotli uses the `brotli` gem (in new apps' Gemfile) |
 | `config.http.compression.brotli_quality` / `gzip_level` | `4` / `4` |
 | `config.http.etags` | `true` (Rack::ETag + Rack::ConditionalGet) |
 | `config.http.pagination.per_page` / `max_per_page` | `25` / `100` — see [pagination](pagination.md) |
+
+Compression picks Brotli or gzip from the request's `Accept-Encoding` (q-values
+honoured; the server's order breaks ties) and sends `Vary: Accept-Encoding`. It
+leaves alone: `HEAD`, 1xx/204/304 (including WebSocket handshakes), responses
+that already have a `Content-Encoding` or `Cache-Control: no-transform`,
+non-text types (images, archives…), bodies under `min_size` and streamed
+bodies. Replace it with your own middleware via
+`config.http.middleware.swap(GemStack::HTTP::Middleware::Compression, MyCompression, config.http)`,
+or turn it off when a CDN or proxy compresses for you.
 
 ### Cache
 

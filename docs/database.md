@@ -105,12 +105,28 @@ Times are stored in UTC on every adapter. Everything else in Sequel's schema
 DSL is unchanged — use `database_type` in a migration for anything
 adapter-specific.
 
-## SQLite in production
+## Production: use PostgreSQL
 
-Fine for a single server: keep the file on persistent storage (a volume),
-back it up, and run the API and the jobs worker on the same host (the
-generated `compose.yaml` does). With several servers, or heavy concurrent
-writes, use PostgreSQL or MySQL.
+SQLite is the development default because it needs nothing installed. For
+production, **use PostgreSQL**: concurrent writers, several servers, realtime
+and job wake-ups across processes through `LISTEN/NOTIFY`, and managed hosting
+everywhere.
+
+Where the production connection comes from:
+
+1. **`DATABASE_URL`** — `postgres://user:password@host:5432/shop_production`. It
+   overrides `config/database.yml`; hosting platforms set it, and
+   `gemstack generate deploy` passes it to every role.
+2. Otherwise the `production:` section of `config/database.yml`.
+
+An app created with SQLite switches with `gem "pg"` in the Gemfile and
+`DATABASE_URL` in production (or `gemstack new --database=postgresql` from the
+start). `gemstack doctor --production` shows which connection is used and
+warns about SQLite.
+
+SQLite in production suits a single server only: keep the file on a persistent
+volume (the Kamal config mounts one), back it up, and run every process on
+that host.
 
 ## Switching databases
 

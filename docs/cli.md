@@ -290,7 +290,7 @@ Connections: [databases](database.md).
 ```bash
 gemstack add auth          # sign up / log in, password reset, email verification, API tokens, policies
 gemstack add storage       # file uploads to disk or S3
-gemstack add realtime      # GemStack.broadcast → browsers (Server-Sent Events)
+gemstack add realtime      # WebSockets: GemStack.broadcast, channels, presence, browser messages
 ```
 
 ## Background jobs and the contract

@@ -24,11 +24,15 @@ gemstack dev          # → http://localhost:3000
                  Browser
                     │
              localhost:3000          one origin: no CORS, no API URL, no proxy config
-                    │
-             GemStack gateway
+                    │                (HTTP and WebSockets)
+             GemStack gateway        owns the public port (kamal-proxy in production)
                /          \
-         Next.js           /api/*  → Ruby (Rack + Puma)
+         Next.js           /api/*  → Ruby API (Rack + Puma), incl. the /api/realtime WebSocket
+     (internal port)       (internal port)
 ```
+
+The gateway is the only process on the public port; Next.js, Puma and the jobs
+worker run behind it on internal ports that `gemstack dev` picks.
 
 ## Why
 
@@ -86,7 +90,7 @@ const created: Product = await products.create({ name: "Lamp", price: "9.99" });
 | Command | |
 |---|---|
 | `gemstack new NAME` | new app (`--database=sqlite3\|postgresql\|mysql2\|trilogy`, `--skip-frontend`, `--skip-database`, `--skip-install`, `--skip-git`) |
-| `gemstack dev` | Next.js + Ruby API + jobs worker on one port |
+| `gemstack dev` | the gateway on one public port, with Next.js, the Ruby API and a jobs worker behind it |
 | `gemstack server` / `s` | the Ruby API alone (Puma) |
 | `gemstack g resource Product name:string price:decimal` | full vertical slice: migration, model, API, TypeScript client, Next.js pages (`--api-only`, `--frontend-only`, `--actions=`) |
 | `gemstack g controller Reports index show` | a controller on its own, with routes and tests |
@@ -109,8 +113,8 @@ Every option, the field types and how to add other Next.js pages:
 
 Requirements: **Ruby 3.3 or newer** (tested on 3.3, 3.4 and 4.0; installed any way you like —
 rbenv, rvm, asdf, mise, chruby or a package manager), **Node.js 20.9+** and npm. Apps
-use SQLite by default; `--database=postgresql` or `--database=mysql2` for a
-server database ([databases](docs/database.md)).
+use SQLite by default (nothing to install); `--database=postgresql` or `--database=mysql2` for a
+server database. **Use PostgreSQL in production** — set `DATABASE_URL` ([databases](docs/database.md)).
 
 ```bash
 gem install gemstack
@@ -155,7 +159,7 @@ gems/
     test/<module>/   the tests of each module
   gemstack-cli/      the `gemstack` executable
   gemstack-auth/     authentication and policies (argon2)
-  gemstack-realtime/ Server-Sent Events (nio4r)
+  gemstack-realtime/ WebSockets: channels, presence, browser messages (nio4r)
 docs/                guides
 benchmarks/          performance measurements
 examples/shop/       an example application

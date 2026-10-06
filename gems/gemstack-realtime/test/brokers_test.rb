@@ -18,6 +18,38 @@ module BrokerContract
 
     assert_equal ["1-a", "news", "posted", { "n" => 1 }], message.to_a
   end
+
+  # Presence travels through the broker as JSON: another process (node) joins
+  # and leaves, this one tracks a connection; every list converges.
+  def test_presence_across_processes
+    GemStack::Realtime.reset!
+    GemStack::Realtime.broker = broker
+    GemStack::Realtime.listen!
+    other = lambda do |op, meta|
+      data = { "node" => "other-process", "entries" => [["rooms:1", "42", meta]] }
+      broker.publish(GemStack::Realtime::Message.new(GemStack::Realtime.next_id, GemStack::Realtime::Presence::CHANNEL,
+                                                     op, data))
+    end
+    ids = -> { GemStack::Realtime.present_on("rooms:1").map { |entry| entry["id"] }.sort }
+
+    other.call("join", { "id" => "42", "name" => "Ada" })
+    GemStack::Realtime.presence.track("rooms:1", "7", { "id" => "7" })
+
+    assert(wait_for { ids.call == %w[42 7] }, "both present, got #{ids.call}")
+    assert_equal({ "id" => "42", "name" => "Ada" }, GemStack::Realtime.present_on("rooms:1").find { |e| e["id"] == "42" }["meta"])
+    other.call("leave", nil)
+
+    assert(wait_for { ids.call == %w[7] }, "the other process left, got #{ids.call}")
+  ensure
+    GemStack::Realtime.reset!
+    @broker = nil
+  end
+
+  def wait_for(timeout = 3)
+    deadline = Time.now + timeout
+    sleep 0.02 until yield || Time.now > deadline
+    yield
+  end
 end
 
 class PostgresBrokerTest < Minitest::Test

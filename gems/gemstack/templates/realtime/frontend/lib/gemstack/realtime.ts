@@ -138,6 +138,14 @@ class RealtimeClient {
     this.connect();
   }
 
+  /** Calls listener(status) whenever the connection status changes. */
+  onStatus(listener: (status: RealtimeStatus) => void): () => void {
+    let last = this.status;
+    return this.onChange(() => {
+      if (this.status !== last) listener((last = this.status));
+    });
+  }
+
   /** Re-renders on status and presence changes (for hooks). */
   onChange(listener: () => void): () => void {
     this.listeners.add(listener);
