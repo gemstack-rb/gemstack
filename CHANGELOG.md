@@ -2,7 +2,7 @@
 
 All GemStack gems are released together with one version.
 
-## Unreleased
+## 0.4.1
 
 - **One `.env` for the API and the frontend**: the root one. `frontend/next.config.ts` loads the root
   `.env` files (same order as the API, real environment first), so `next build` and `next start` get
