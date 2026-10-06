@@ -99,6 +99,7 @@ module GemStack
       def schema_for(ref)
         if ref[:scalar] then Types.fetch(ref[:scalar]).openapi.dup
         elsif ref[:ref] then { "$ref": "#/components/schemas/#{ref[:ref]}" }
+        elsif ref[:enum] then { type: "string", enum: ref[:enum] }
         elsif ref[:array] then { type: "array", items: schema_for(ref[:array]) }
         elsif ref[:page] then page_schema(ref[:page])
         elsif ref[:object] then object_schema(ref[:object])

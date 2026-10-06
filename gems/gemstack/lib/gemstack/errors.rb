@@ -83,8 +83,18 @@ module GemStack
   class ValidationError < Error
     status 422, "validation_failed", "Validation failed"
 
+    # Without a message, it lists the errors — "Validation failed: name is
+    # required, price must be greater than 0" — so logs, consoles and clients
+    # that only show the message say what failed.
     def initialize(message = nil, errors: {}, **)
-      super(message, details: errors, **)
+      super(message || self.class.summary(errors), details: errors, **)
+    end
+
+    def self.summary(errors)
+      list = errors.to_h.flat_map do |field, messages|
+        Array(messages).map { |text| %w[base _base].include?(field.to_s) ? text : "#{field} #{text}" }
+      end
+      list.empty? ? default_message : "#{default_message}: #{list.join(", ")}"
     end
 
     def errors = details

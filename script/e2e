@@ -41,13 +41,15 @@ step "generate resources covering the edge cases"
 bin/gemstack g resource Category name:string:unique
 bin/gemstack g resource Product name:string price:decimal description:text:optional sku:string:unique \
   category:references active:boolean stock:integer weight:float:optional released_on:date:optional \
-  published_at:datetime:optional token:uuid:optional meta:json:optional
+  published_at:datetime:optional token:uuid:optional meta:json:optional status:enum:draft,published,archived
 bin/gemstack g resource Note body:text                              # single field
 bin/gemstack g resource Page title:string slug:string:unique        # collides with GemStack's Page names
 bin/gemstack g resource Report title:string --actions=index,show    # read-only
 bin/gemstack g resource AuditLog message:text --api-only            # no frontend
 bin/gemstack g job SendDigest mailers
 if bin/gemstack g job Digest > /dev/null 2>&1; then echo "expected 'Digest' to be refused"; exit 1; fi
+grep -q 'status: "draft" | "published" | "archived";' frontend/lib/api/generated/types.ts ||
+  { echo "the Product status enum isn't a union type in TypeScript"; exit 1; }
 
 step "add realtime"
 bin/gemstack add realtime

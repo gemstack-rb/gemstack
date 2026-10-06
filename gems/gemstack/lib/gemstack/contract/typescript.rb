@@ -73,6 +73,7 @@ module GemStack
       def ts_type(ref, depth = 0)
         if ref[:scalar] then Types.fetch(ref[:scalar]).ts
         elsif ref[:ref] then ref[:ref]
+        elsif ref[:enum] then ref[:enum].map { |value| JSON.generate(value) }.join(" | ")
         elsif ref[:array]
           inner = ts_type(ref[:array], depth)
           inner.match?(/\A[\w.]+\z/) ? "#{inner}[]" : "Array<#{inner}>"

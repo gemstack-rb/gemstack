@@ -28,7 +28,20 @@ class ResourceSpecTest < Minitest::Test
     assert by_name["category"].index
   end
 
+  def test_enum_fields
+    spec = Spec.new("Post", %w[status:enum:draft,published audience:enum:public,members:optional])
+    status, audience = spec.fields
+
+    assert_equal ["enum", %w[draft published], "draft"], [status.type, status.enum_values, status.default_value]
+    refute_predicate status, :required?, "NOT NULL with a default"
+    assert_equal [%w[public members], nil], [audience.enum_values, audience.default_value]
+    assert audience.optional
+  end
+
   def test_invalid_input
+    assert_raises(Thor::Error) { Spec.new("Post", ["status:enum"]) }
+    assert_raises(Thor::Error) { Spec.new("Post", ["status:enum:Draft"]) }
+    assert_raises(Thor::Error) { Spec.new("Post", ["status:enum:a,a"]) }
     assert_raises(Thor::Error) { Spec.new("Product", ["price:money"]) }
     assert_raises(Thor::Error) { Spec.new("Product", ["price:decimal:big"]) }
     assert_raises(Thor::Error) { Spec.new("Product", %w[name name:text]) }
@@ -157,6 +170,28 @@ class ResourceGeneratorTest < Minitest::Test
     assert_includes form,
                     %(<input id="active" name="active" type="checkbox" checked={values.active} onChange={set("active")} />)
     refute_includes form, "<%"
+  end
+
+  def test_enum_field
+    generate(%w[title status:enum:draft,published audience:enum:public,members:optional], name: "Post")
+
+    migration = read("db/migrations/20260928120000_create_posts.rb")
+
+    assert_includes migration, %(String :status, size: 50, null: false, default: "draft")
+    assert_includes migration, "String :audience, size: 50\n"
+    model = read("app/models/post.rb")
+
+    assert_includes model, %(enum :status, %w[draft published], default: "draft")
+    assert_includes model, "enum :audience, %w[public members], null: true"
+    form = read("frontend/components/posts/PostForm.tsx")
+
+    assert_includes form, %(status: record?.status ?? "draft",)
+    assert_includes form, "status: values.status,"
+    assert_includes form, %(audience: values.audience === "" ? null : values.audience,)
+    assert_includes form, %(<select id="status" name="status" value={values.status} onChange={set("status")}>) +
+                          %(<option value="draft">Draft</option><option value="published">Published</option></select>)
+    assert_includes form, %(<option value="">—</option><option value="public">)
+    refute_includes read("test/models/post_test.rb"), "def test_requires_status"
   end
 
   def test_read_only_resource

@@ -4,6 +4,15 @@ All GemStack gems are released together with one version.
 
 ## Unreleased
 
+- **Model enums**: `enum :status, %w[draft published archived], default: "draft"` — a string column
+  limited to those values, validated, accepted only with those values by the request schema, typed
+  `"draft" | "published" | "archived"` in TypeScript and OpenAPI, with `Product.statuses`, `draft?`,
+  `published!` and chainable `Product.published` (`prefix:` for clashes). Generators take
+  `status:enum:draft,published,archived` (migration column, the `enum` line, a `<select>` in the form).
+  Schemas and fields take `enum:` too.
+- Validation errors say what failed in their message — "Validation failed: price must be greater than 0" —
+  not only in `errors`, and generated forms show the message when an error belongs to no field in the form
+  (e.g. `errors.add(:base, …)`); before, such errors left the form without any message.
 - **Realtime runs over WebSockets.** `gemstack add realtime` gives one WebSocket per browser tab on
   `/api/realtime` (same origin; the dev gateway and kamal-proxy route it with `/api`), carrying
   subscriptions, broadcasts, browser → server messages (`realtime.send` → `receive` in

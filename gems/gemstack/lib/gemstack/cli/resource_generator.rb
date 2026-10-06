@@ -63,6 +63,9 @@ module GemStack
         when "references"
           "foreign_key :#{field.column}, :#{field.referenced_table}, type: :Bignum#{null}, on_delete: :restrict"
         when "boolean" then "TrueClass :#{field.name}, null: false, default: false"
+        when "enum"
+          default = field.default_value ? ", null: false, default: #{field.default_value.inspect}" : ""
+          "String :#{field.name}, size: 50#{default}#{", unique: true" if field.unique}"
         else
           unique = field.unique && field.type != "json" ? ", unique: true" : ""
           format(COLUMN_TYPES.fetch(field.type), field.name) + null + unique
@@ -70,6 +73,11 @@ module GemStack
       end
 
       def model_field(field)
+        if field.enum?
+          default = field.default_value ? ", default: #{field.default_value.inspect}" : ", null: true"
+          return "enum :#{field.name}, %w[#{field.enum_values.join(" ")}]#{default}"
+        end
+
         options = []
         options << "null: false" if field.required?
         options << "null: false, default: false" if field.type == "boolean"
@@ -87,6 +95,7 @@ module GemStack
         when "integer", "bigint", "float", "references" then "String(#{attr} ?? \"\")"
         when "datetime" then "(#{attr} ?? \"\").slice(0, 16)"
         when "json" then "#{attr} == null ? \"\" : JSON.stringify(#{attr}, null, 2)"
+        when "enum" then "#{attr} ?? #{field.default_value.to_s.inspect}"
         else "#{attr} ?? \"\""
         end
       end
@@ -94,7 +103,7 @@ module GemStack
       # Expression turning a form value into an API input value.
       def form_output(field)
         value = "values.#{field.column}"
-        return value if field.type == "boolean"
+        return value if field.type == "boolean" || (field.enum? && !field.optional)
 
         converted =
           case field.type
@@ -115,6 +124,10 @@ module GemStack
           %(<input #{common} type="checkbox" checked={values.#{key}} onChange={set("#{key}")} />)
         when "text", "json"
           %(<textarea #{common} rows={4} value={values.#{key}} onChange={set("#{key}")}#{required} />)
+        when "enum"
+          options = field.enum_values.map { |value| %(<option value="#{value}">#{Inflector.humanize(value)}</option>) }
+          options.unshift(%(<option value="">—</option>)) if field.optional
+          %(<select #{common} value={values.#{key}} onChange={set("#{key}")}>#{options.join}</select>)
         else
           attrs = { "integer" => %(type="number" step="1"), "bigint" => %(type="number" step="1"),
                     "references" => %(type="number" step="1"), "float" => %(type="number" step="any"),

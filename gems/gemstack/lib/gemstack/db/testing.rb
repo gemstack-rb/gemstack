@@ -47,7 +47,8 @@ module GemStack
 
       def sample_value(model, field, sequence)
         opts = field.options
-        return Array(opts[:in]).first if opts[:in]
+        allowed = opts.values_at(:enum, :in).compact.first
+        return Array(allowed).first if allowed
 
         case field.type
         when :string, :text then sample_string(field, opts, sequence)

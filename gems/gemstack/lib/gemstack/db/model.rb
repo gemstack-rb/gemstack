@@ -8,6 +8,8 @@ module GemStack
   #     field :price, :decimal, null: false, gt: 0
   #     field :active, :boolean, null: false, default: true
   #
+  #     enum :status, %w[draft published archived], default: "draft"
+  #
   #     validates :name, format: /\A\S/
   #     belongs_to :category
   #     has_many :reviews
@@ -26,7 +28,7 @@ module GemStack
   class Model
     Field = Struct.new(:name, :type, :options)
 
-    FIELD_RULES = %i[null default size gt gte lt lte in format].freeze
+    FIELD_RULES = %i[null default size gt gte lt lte in enum format].freeze
 
     plugin :timestamps, update_on_create: true
     plugin :validation_helpers
@@ -46,7 +48,8 @@ module GemStack
       end
 
       # Declares a field. Options: null: false (required), default:, size:
-      # (max length), gt/gte/lt/lte, in:, format:. Types are GemStack::Types.
+      # (max length), gt/gte/lt/lte, in:, enum: (like in:, and a union type
+      # in TypeScript), format:. Types are GemStack::Types.
       def field(name, type, **options)
         Types.fetch(type)
         unknown = options.keys - FIELD_RULES
@@ -56,6 +59,41 @@ module GemStack
         serialize_json(name) if Types::CLASS_ALIASES.fetch(type, type).to_sym == :json
         gemstack_fields[name.to_sym] = Field.new(name.to_sym, Types::CLASS_ALIASES.fetch(type, type).to_sym,
                                                  options.freeze)
+      end
+
+      def gemstack_enums
+        @gemstack_enums ||= superclass.respond_to?(:gemstack_enums) ? superclass.gemstack_enums.dup : {}
+      end
+
+      # A string column limited to a list of values:
+      #
+      #   enum :status, %w[draft published archived], default: "draft"
+      #
+      # It is validated, the request schema accepts only those values,
+      # TypeScript gets "draft" | "published" | "archived", and it adds
+      #
+      #   Post.statuses           # => ["draft", "published", "archived"]
+      #   post.published?         # status == "published"
+      #   post.published!         # update(status: "published")
+      #   Post.published          # where(status: "published"), chainable
+      #
+      # New records start at `default:`. Without one the value is required,
+      # unless null: true. When a helper would clash with another method,
+      # prefix: true names them status_published? etc. (prefix: "is" →
+      # is_published?); scopes: false skips the datasets.
+      def enum(name, values, default: nil, null: false, prefix: nil, scopes: true)
+        name = name.to_sym
+        values = Array(values).map(&:to_s).uniq.freeze
+        raise ArgumentError, "enum #{name}: give at least one value" if values.empty?
+
+        default = default&.to_s
+        if default && !values.include?(default)
+          raise ArgumentError, "enum #{name}: the default #{default.inspect} isn't one of #{values.inspect}"
+        end
+
+        field(name, :string, null: null, enum: values, **(default ? { default: default } : {}))
+        gemstack_enums[name] = Enum.new(name, values, default)
+        define_enum_helpers(name, values, prefix, scopes)
       end
 
       def gemstack_validations
@@ -104,6 +142,38 @@ module GemStack
 
       private
 
+      def define_enum_helpers(name, values, prefix, scopes)
+        prefix = { true => "#{name}_", nil => "", false => "" }.fetch(prefix) { "#{prefix}_" }
+        enum_method(name, Inflector.pluralize(name.to_s), singleton: true) { values }
+        values.each do |value|
+          method = "#{prefix}#{value.gsub(/\W+/, "_")}"
+          unless method.match?(/\A[a-z_][A-Za-z0-9_]*\z/)
+            raise ArgumentError, "enum #{name}: #{value.inspect} can't be a method name; use prefix:"
+          end
+
+          enum_method(name, "#{method}?") { self[name] == value }
+          enum_method(name, "#{method}!") { update(name => value) }
+          enum_method(name, method, singleton: true) { where(name => value) } if scopes
+        end
+      end
+
+      # Defines one helper, refusing to replace an existing method (e.g. a
+      # value "new" would replace Model.new: use prefix:).
+      def enum_method(name, method, singleton: false, &body)
+        taken = singleton ? respond_to?(method, true) : method_defined?(method) || private_method_defined?(method)
+        if taken
+          raise ArgumentError, "enum #{name}: #{singleton ? "#{self}." : "#"}#{method} already exists; " \
+                               "use prefix: true (or prefix: \"…\")"
+        end
+
+        if singleton
+          define_singleton_method(method, &body)
+          dataset_module { define_method(method, &body) } unless method == Inflector.pluralize(name.to_s)
+        else
+          define_method(method, &body)
+        end
+      end
+
       # PostgreSQL's jsonb comes back as Hash/Array (pg_json); MySQL JSON and
       # SQLite text come back as strings, so those fields are (de)serialized.
       def serialize_json(name)
@@ -144,6 +214,8 @@ module GemStack
       end
     end
 
+    Enum = Data.define(:name, :values, :default)
+
     alias update! update
 
     # Identifies this version of the record, for ETags (Controller#stale?) and
@@ -171,6 +243,14 @@ module GemStack
 
     private
 
+    # New records start at their enums' defaults.
+    def initialize_set(values)
+      super
+      self.class.gemstack_enums.each_value do |enum|
+        @values[enum.name] = enum.default if enum.default && !@values.key?(enum.name)
+      end
+    end
+
     def validate_fields
       self.class.gemstack_fields.each_value do |field|
         opts = field.options
@@ -197,9 +277,9 @@ module GemStack
         words = { gt: "greater than", gte: "greater than or equal to", lt: "less than", lte: "less than or equal to" }
         validates_operator(operator, opts[key], name, message: "must be #{words[key]} #{opts[key]}", allow_nil: true)
       end
-      if opts[:in]
-        validates_includes(opts[:in], name, message: "must be one of: #{opts[:in].to_a.join(", ")}",
-                                            allow_nil: true)
+      allowed = opts[:enum] || opts[:in]
+      if allowed
+        validates_includes(allowed, name, message: "must be one of: #{allowed.to_a.join(", ")}", allow_nil: true)
       end
       validates_format(opts[:format], name, message: "is invalid", allow_nil: true) if opts[:format]
     end

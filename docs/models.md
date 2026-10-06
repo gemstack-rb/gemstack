@@ -51,6 +51,7 @@ class Product < ApplicationModel
   field :description, :text
   field :active, :boolean, null: false, default: false
   field :category_id, :references, null: false
+  enum :status, %w[draft published archived], default: "draft"
 
   validates :name, format: /\A\S/, length: { min: 2 }
   validates :sku, uniqueness: true
@@ -64,7 +65,7 @@ end
 once gives you:
 
 - **validations**: `null: false` → "is required"; `size:` → max length;
-  `gt/gte/lt/lte`, `in:`, `format:`;
+  `gt/gte/lt/lte`, `in:`, `enum:`, `format:`;
 - **a request schema**: `Product.input_schema` (see [validation](validation.md));
 - **serializer types**, and so **TypeScript types**.
 
@@ -81,6 +82,42 @@ def validate
   errors.add(:price, "must be a round number") if price && price % 1 != 0
 end
 ```
+
+A failed validation raises `Sequel::ValidationFailed` from `create`, `save`
+and `update`; in a request it becomes a 422 whose message lists the errors
+("Validation failed: price must be greater than 0") and whose `errors` holds
+them by field ([errors](#errors)). `valid?` and `errors` check without saving.
+
+### Enums
+
+A string column limited to a list of values:
+
+```ruby
+class Product < ApplicationModel
+  enum :status, %w[draft published archived], default: "draft"
+end
+
+Product.statuses                 # => ["draft", "published", "archived"]
+product = Product.new            # status "draft"
+product.draft?                   # => true
+product.published!              # update(status: "published")
+Product.published                # where(status: "published") — chainable: Product.published.order(:name)
+Product.create(status: "lost")   # 422: status must be one of: draft, published, archived
+```
+
+- Stored as the value strings (readable in SQL, no mapping to keep in sync).
+  The migration column: `String :status, size: 50, null: false, default: "draft"`;
+  `gemstack g resource Product status:enum:draft,published,archived` writes it,
+  the `enum` line and a `<select>` in the form.
+- The request schema accepts only those values, and TypeScript gets
+  `status: "draft" | "published" | "archived"` (in the serializer's type too).
+- Without `default:` the value is required, unless `null: true`.
+- `prefix: true` names the helpers `status_draft?`, `Product.status_draft`…
+  (`prefix: "is"` → `is_draft?`); declaring a value whose helper would replace
+  an existing method (e.g. `new` → `Product.new`) raises and asks for one.
+  `scopes: false` skips the datasets.
+- `field :status, :string, enum: %w[…]` gives the validation and the union type
+  without the helpers.
 
 Timestamps (`created_at`, `updated_at`) are set automatically when the
 columns exist. Use `GemStack::Model(:inventory_items)` for a table that

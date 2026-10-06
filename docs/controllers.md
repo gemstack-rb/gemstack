@@ -109,7 +109,7 @@ raise GemStack::Conflict.new("Already paid", code: "already_paid")
 ```
 
 ```json
-{ "error": { "code": "validation_failed", "message": "Validation failed", "request_id": "…" },
+{ "error": { "code": "validation_failed", "message": "Validation failed: name is required", "request_id": "…" },
   "errors": { "name": ["is required"] } }
 ```
 
