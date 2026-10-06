@@ -20,10 +20,13 @@ module GemStack
     setting :name, default: -> { File.basename(root) }
     setting :root, default: -> { Dir.pwd }
 
-    # .env files loaded at boot, earlier files win. Real ENV always wins.
+    # .env files loaded at boot from the app root, in every environment (one
+    # .env for the API and the frontend: next.config.ts reads the same files).
+    # Earlier files win; real ENV always wins. Missing files are skipped, so
+    # production containers configured through ENV are unaffected.
     setting :env_files, default: lambda {
       env = GemStack.env
-      env.local? ? [".env.#{env}.local", ".env.local", ".env.#{env}", ".env"] : []
+      [".env.#{env}.local", ".env.local", ".env.#{env}", ".env"]
     }
 
     # Root secret for signatures (storage URLs, derived keys). Production must
@@ -70,7 +73,7 @@ module GemStack
     end
 
     # First call in config/app.rb: sets the application root and loads .env
-    # files (development/test) before anything reads configuration or ENV.
+    # files before anything reads configuration or ENV.
     def setup(root:)
       config.root = root.to_s
       load_env_files!

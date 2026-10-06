@@ -2,6 +2,17 @@
 
 All GemStack gems are released together with one version.
 
+## Unreleased
+
+- **One `.env` for the API and the frontend**: the root one. `frontend/next.config.ts` loads the root
+  `.env` files (same order as the API, real environment first), so `next build` and `next start` get
+  `NEXT_PUBLIC_*` values from it wherever they run — before, a production build outside `gemstack dev`
+  compiled them in as undefined. The API now loads the root `.env` files in production too, when present
+  (real environment variables still win). The Docker image built by `gemstack generate deploy` gets the
+  root `.env`'s `NEXT_PUBLIC_*` lines as a build secret for `next build` (`.kamal/secrets`:
+  `GEMSTACK_PUBLIC_ENV`), never stored in the image. Existing apps: `gemstack update` updates
+  `next.config.ts`; re-run `gemstack generate deploy` for the Docker/Kamal part.
+
 ## 0.4.0
 
 Upgrading from 0.3.x: run `gemstack update` (it also updates the files `gemstack new` wrote). Apps that

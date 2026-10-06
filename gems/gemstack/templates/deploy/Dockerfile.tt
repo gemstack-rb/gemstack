@@ -13,7 +13,8 @@
 #   docker build -t <%= service %> .
 #
 # Configuration comes from the environment at runtime (SECRET_KEY_BASE,
-# DATABASE_URL, …); nothing secret is baked into the image.
+# DATABASE_URL, …); nothing secret is baked into the image. The frontend's
+# NEXT_PUBLIC_* values, public by design, are compiled in at build time.
 
 ARG RUBY_VERSION=<%= ruby_version %>
 <% if frontend? -%>
@@ -42,7 +43,10 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
 ENV NEXT_TELEMETRY_DISABLED=1 GEMSTACK_NEXT_OUTPUT=standalone
-RUN npm run build \
+# NEXT_PUBLIC_* values are compiled into the JavaScript here. They come from the
+# root .env as a build secret (.kamal/secrets: GEMSTACK_PUBLIC_ENV), mounted where
+# next.config.ts reads the root .env, for this step only: never stored in the image.
+RUN --mount=type=secret,id=GEMSTACK_PUBLIC_ENV,target=/.env,required=false npm run build \
     && mkdir -p public && cp -r public .next/standalone/ && cp -r .next/static .next/standalone/.next/
 <% end -%>
 

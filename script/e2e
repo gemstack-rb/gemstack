@@ -326,9 +326,18 @@ bundle install --quiet
 step "TypeScript"
 (cd frontend && npx tsc --noEmit)
 
-step "Next.js production build (proxying /api with rewrites)"
+step "Next.js production build (proxying /api with rewrites; NEXT_PUBLIC_* from the root .env)"
+printf 'NEXT_PUBLIC_E2E_ROOT_ENV="from the root .env"\n' >> .env
+mkdir -p frontend/app/root-env
+cat > frontend/app/root-env/page.tsx <<'TSX'
+"use client";
+export default function RootEnvPage() {
+  return <p>{process.env.NEXT_PUBLIC_E2E_ROOT_ENV}</p>;
+}
+TSX
 (cd frontend && GEMSTACK_API_URL="http://127.0.0.1:$PORT_RT" npx next build > "$WORK/build.log" 2>&1) ||
   { tail -40 "$WORK/build.log"; exit 1; }
+grep -rqF "from the root .env" frontend/.next/static || { echo "NEXT_PUBLIC_E2E_ROOT_ENV from the root .env isn't in the build"; exit 1; }
 
 step "realtime client through Next.js (next start, /api rewritten to the API)"
 start_api

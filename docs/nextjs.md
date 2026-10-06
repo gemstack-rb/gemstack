@@ -84,6 +84,18 @@ app needs it.
 
 ## Environment variables
 
+One `.env` for the whole app: the **root** one (next to `Gemfile`). The Ruby API
+loads it, and `next.config.ts` loads the same files for Next.js — under
+`gemstack dev`, `next build` and `next start` alike — so there is no
+`frontend/.env` to keep in sync. Order: `.env.<env>.local`, `.env.local`,
+`.env.<env>`, `.env` (earlier files win); real environment variables always win.
+
+`NEXT_PUBLIC_*` values are compiled into the browser's JavaScript by `next build`:
+they must be in the root `.env` (or the environment) **when the frontend is
+built**, and changing one needs a rebuild. Anything without the prefix stays on
+the server. The Docker image (`gemstack generate deploy`) receives the root `.env`'s
+`NEXT_PUBLIC_*` lines as a build secret ([deployment](deployment.md#environment-and-env)).
+
 | Variable | Where | Meaning |
 |---|---|---|
 | `GEMSTACK_API_URL` | Next.js server | internal Ruby URL (set by `gemstack dev`; set it in production) |

@@ -4,7 +4,7 @@ All configuration goes through one object:
 
 ```ruby
 # config/app.rb
-GemStack.setup(root: File.expand_path("..", __dir__))   # sets the root, loads .env (dev/test)
+GemStack.setup(root: File.expand_path("..", __dir__))   # sets the root, loads the root .env files
 Bundler.require(:default, GemStack.env.to_sym)
 
 GemStack.configure do |config|
@@ -31,7 +31,7 @@ immediately (with a "did you mean" suggestion).
 |---|---|---|
 | `config.name` | root directory name | |
 | `config.root` | `Dir.pwd` | set by the generated `config/app.rb` |
-| `config.env_files` | `.env.<env>.local`, `.env.local`, `.env.<env>`, `.env` in dev/test; none in production | earlier files win; real ENV always wins |
+| `config.env_files` | `.env.<env>.local`, `.env.local`, `.env.<env>`, `.env` (every environment; the frontend's `next.config.ts` reads the same) | earlier files win; real ENV always wins |
 | `config.filter_parameters` | password, secret, token, api_key, authorization, cookie, credit_card, cvv, ssn, private_key, … | substring match, masked as `[FILTERED]` in logs |
 | `config.reload_code` | `true` in development | reload `app/` + routes on change |
 | `config.eager_load` | `true` outside development/test | |
