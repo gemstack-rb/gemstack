@@ -94,6 +94,40 @@ class TemplateUpdateTest < Minitest::Test
     assert_includes read("#{CHANGED}.new"), "GEMSTACK_NEXT_OUTPUT"
   end
 
+  def test_merge_keeps_your_edits_and_adds_the_release_changes
+    write(CHANGED, "#{read(CHANGED)}// ours\n")
+    result = update(answers: %w[m])
+
+    assert_equal [CHANGED], result.merged
+    assert_includes read(CHANGED), "// ours"
+    assert_includes read(CHANGED), "GEMSTACK_NEXT_OUTPUT"
+    assert_includes @out.string, "1 merged"
+    assert_equal "#{GemStack::VERSION}\n", read(".gemstack/version")
+  end
+
+  def test_a_merge_where_both_changed_the_same_lines_gets_conflict_markers
+    # The release adds `output:` right after this comment; so do we, differently.
+    write(CHANGED, read(CHANGED).sub(%r{^  // The production image.*\n}, "\\0  reactStrictMode: true,\n"))
+    result = update(answers: %w[m])
+
+    assert_equal [CHANGED], result.marked
+    content = read(CHANGED)
+
+    assert_includes content, "<<<<<<< #{CHANGED} (yours)"
+    assert_includes content, "reactStrictMode: true"
+    assert_includes content, ">>>>>>> #{CHANGED} (GemStack #{GemStack::VERSION})"
+    assert_includes @out.string, "1 conflict: resolve the <<<<<<< markers"
+  end
+
+  def test_merge_without_the_earlier_template_asks_again
+    write(CHANGED, "#{read(CHANGED)}// ours\n")
+    result = update(answers: %w[m s], old_templates: [])
+
+    assert_equal [CHANGED], result.conflicts
+    assert_includes @out.string, "Can't merge"
+    assert_includes read(CHANGED), "// ours"
+  end
+
   def test_skip_keeps_yours
     write(CHANGED, "#{read(CHANGED)}// ours\n")
     result = update(answers: %w[s])

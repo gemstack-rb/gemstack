@@ -124,8 +124,14 @@ the new one's.
 | didn't change between the two releases | left alone, even if you edited it |
 | is new in this release | created |
 | changed, and you never edited it | updated |
-| changed, and you edited it | you choose: **o**verwrite, **s**kip, see the **d**iff, or save the new version as `FILE.new` |
+| changed, and you edited it | you choose: **m**erge, **o**verwrite, **s**kip, see the **d**iff, or save the new version as `FILE.new` |
 | changed, and you deleted it | stays deleted |
+
+**Merge** keeps your edits and applies the release's changes to the template on top (a three-way merge
+with `git merge-file`), e.g. a new line in `next.config.ts` next to your own settings. Where you and the
+release changed the same lines, the file gets `<<<<<<<` / `>>>>>>>` conflict markers around both versions
+to resolve by hand, as after a `git merge`. Overwrite replaces the file with the new template, edits
+included — commit first, or use merge.
 
 Nothing you edited is overwritten without asking; outside a terminal (scripts, CI) those files are listed
 for you instead. The app records the templates it's on in `.gemstack/version` (commit it). The old

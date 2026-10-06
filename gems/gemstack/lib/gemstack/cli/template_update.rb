@@ -76,7 +76,11 @@ module GemStack
     #   template unchanged            skipped (your edits are yours)
     #   new in this version           created
     #   you never edited the file     updated
-    #   you edited it                 you choose: overwrite, skip, diff, or save as FILE.new
+    #   you edited it                 you choose: merge, overwrite, skip, diff, or save as FILE.new
+    #
+    # Merge is a three-way merge (git merge-file): the release's changes to the
+    # template are applied to your copy, keeping your edits. Where both changed
+    # the same lines the file gets <<<<<<< conflict markers to resolve.
     #
     # Apps record the templates they're on in .gemstack/version. Older apps don't,
     # so each file is compared with every earlier release's template: matching
@@ -88,9 +92,10 @@ module GemStack
       # (db/migrations/) are the app's history and never part of an update.
       MANAGED = %w[Gemfile .gemstack/version].freeze
 
-      # created/updated/saved (as FILE.new) are done; conflicts were left for you;
-      # removed are files you deleted, which stay deleted.
-      Result = Struct.new(:created, :updated, :saved, :conflicts, :removed, keyword_init: true)
+      # created/updated/merged/saved (as FILE.new) are done; marked were merged
+      # with conflict markers to resolve; conflicts were left for you; removed
+      # are files you deleted, which stay deleted.
+      Result = Struct.new(:created, :updated, :merged, :marked, :saved, :conflicts, :removed, keyword_init: true)
 
       def self.recorded_version(root)
         path = File.join(root, VERSION_FILE)
@@ -109,7 +114,7 @@ module GemStack
           $stdin.gets.to_s.strip.downcase
         }
         @old_templates = old_templates
-        @result = Result.new(created: [], updated: [], saved: [], conflicts: [], removed: [])
+        @result = Result.new(created: [], updated: [], merged: [], marked: [], saved: [], conflicts: [], removed: [])
       end
 
       def run
@@ -210,7 +215,7 @@ module GemStack
         return @result.removed << path if mine.nil?
         return update(path, file, :updated) if olds.include?(mine) # an unedited, older copy
 
-        conflict(path, file, mine)
+        conflict(path, file, mine, olds.compact.uniq)
       end
 
       def create(path, file)
@@ -225,18 +230,55 @@ module GemStack
         status("update", path)
       end
 
-      def conflict(path, file, mine)
+      def conflict(path, file, mine, bases)
         return record_conflict(path) unless @interactive
 
         loop do
-          case @prompt.call("#{path} changed in this version and you edited it — [o]verwrite, [s]kip, " \
-                            "[d]iff, save as [n]ew file?")
+          case @prompt.call("#{path} changed in this version and you edited it — [m]erge (keeps your edits), " \
+                            "[o]verwrite, [s]kip, [d]iff, save as [n]ew file?")
+          when "m"
+            return if merge(path, file, mine, bases)
+
+            @output.puts("  Can't merge: it needs git and the earlier template (not available). Choose another option.")
           when "o" then return update(path, file, :updated)
           when "n" then return save_new(path, file)
           when "d" then @output.puts(diff(mine, file.content, path))
           else return record_conflict(path)
           end
         end
+      end
+
+      # Applies the release's template changes to your copy. Without a recorded
+      # version the starting template isn't known: each earlier release's is
+      # tried (newest first) and the merge with the fewest conflicts wins.
+      def merge(path, file, mine, bases)
+        merges = bases.reverse.filter_map { |base| merge_file(path, mine, base, file.content) }
+        return false if merges.empty?
+
+        text, conflicts = merges.min_by { |_, count| count }
+        write(path, AppFile.new(text, file.mode))
+        if conflicts.zero?
+          @result.merged << path
+          status("merge", path)
+        else
+          @result.marked << path
+          status("merge", "#{path} — #{conflicts} conflict#{"s" if conflicts > 1}: resolve the <<<<<<< markers")
+        end
+        true
+      end
+
+      # [merged text, number of conflicts], or nil without git.
+      def merge_file(path, mine, base, theirs)
+        Dir.mktmpdir("gemstack-merge") do |dir|
+          files = { "yours" => mine, "base" => base, "new" => theirs }.map do |name, content|
+            File.join(dir, name).tap { |file| File.binwrite(file, content) }
+          end
+          labels = ["#{path} (yours)", "#{path} (earlier GemStack)", "#{path} (GemStack #{GemStack::VERSION})"]
+          out, status = Open3.capture2("git", "merge-file", "-p", *labels.flat_map { |label| ["-L", label] }, *files)
+          [out, status.exitstatus] if status.exitstatus.between?(0, 127)
+        end
+      rescue SystemCallError
+        nil
       end
 
       def save_new(path, file)
@@ -275,7 +317,8 @@ module GemStack
       end
 
       def report
-        done = { "created" => @result.created, "updated" => @result.updated, "saved as .new" => @result.saved,
+        done = { "created" => @result.created, "updated" => @result.updated, "merged" => @result.merged,
+                 "merged with conflicts to resolve" => @result.marked, "saved as .new" => @result.saved,
                  "left for you" => @result.conflicts }.reject { |_, paths| paths.empty? }
         if done.empty?
           @output.puts("  nothing to update")
