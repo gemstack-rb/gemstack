@@ -9,7 +9,7 @@ require "gemstack/jobs"     # background jobs (app/jobs)
 require "gemstack/mail"     # mailers (app/mailers)
 # require "gemstack/storage" # file uploads — `gemstack add storage` turns this on
 
-# Sets the application root and loads .env files (development/test).
+# Sets the application root and loads the .env files there (the frontend reads them too).
 GemStack.setup(root: File.expand_path("..", __dir__))
 
 # Require the gems listed in the Gemfile for the current environment.

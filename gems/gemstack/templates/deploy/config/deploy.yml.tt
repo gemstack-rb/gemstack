@@ -111,6 +111,11 @@ volumes:
 
 builder:
   arch: amd64
+<% if frontend? -%>
+  # The root .env's NEXT_PUBLIC_* lines, for `next build` (see .kamal/secrets).
+  secrets:
+    - GEMSTACK_PUBLIC_ENV
+<% end -%>
 <% if postgresql? || mysql? || redis? -%>
 
 accessories:

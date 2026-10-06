@@ -7,7 +7,7 @@ module GemStack
   # as a Rack app. There is one per process, available as GemStack.application.
   #
   # Boot sequence (idempotent):
-  #   1. load .env files (development/test)          config.env_files
+  #   1. load .env files                             config.env_files
   #   2. load config/environments/<env>.rb if present
   #   3. run plugin hooks                             GemStack::Plugins
   #   4. set up Zeitwerk for every directory in app/  (+ config.autoload_paths)

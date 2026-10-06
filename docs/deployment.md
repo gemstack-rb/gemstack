@@ -25,8 +25,27 @@ GEMSTACK_ENV=production DATABASE_URL=… bundle exec gemstack db:migrate
 ```
 
 Production defaults: JSON logs with request IDs, no exception details in
-responses, eager loading, HSTS on HTTPS requests, `.env` files not loaded
-(use real environment variables for secrets).
+responses, eager loading, HSTS on HTTPS requests.
+
+### Environment and `.env`
+
+One `.env` at the app root configures both processes, in every environment: the
+API loads `.env.production.local`, `.env.local`, `.env.production` and `.env`
+(earlier files win), and `frontend/next.config.ts` loads the same files for
+`next build` and `next start`. Real environment variables always win, so a
+platform's settings override the files.
+
+- `NEXT_PUBLIC_*` values are compiled into the JavaScript at **build** time: have
+  them in the root `.env` (or the environment) where `npm run build` runs, and
+  rebuild after changing one.
+- Next.js's standalone server (`node frontend/server.js`, used by the Docker
+  image) doesn't run `next.config.ts`: its server-side variables come from the
+  environment, as in the Kamal setup below.
+- With Kamal, the image contains no `.env`: runtime settings come from
+  `config/deploy.yml` (`env:`) and `.kamal/secrets`. For the frontend build,
+  `.kamal/secrets` passes the `NEXT_PUBLIC_*` lines of the root `.env.production`
+  and `.env` as a build secret (`GEMSTACK_PUBLIC_ENV`), mounted for `next build`
+  only — public values, never stored in the image, nothing else from the file.
 
 ## Kamal
 
@@ -52,7 +71,8 @@ reach the API directly through the `<service>-api` network alias. Deploys are ze
 switches to new containers once their health checks (`/` and `/api/health`) pass.
 
 The images run as a non-root user and contain no `.env` files or secrets: everything comes from
-environment variables at runtime. The PostgreSQL or MySQL accessory (from `config/database.yml`) runs
+environment variables at runtime, except the frontend's `NEXT_PUBLIC_*` values, which `next build`
+compiles in from the root `.env` ([environment](#environment-and-env)). The PostgreSQL or MySQL accessory (from `config/database.yml`) runs
 on the same server; Redis is added when realtime needs it; SQLite gets a persistent volume.
 
 ### First deploy

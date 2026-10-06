@@ -130,10 +130,10 @@ class GemStackModuleTest < Minitest::Test
     assert_equal "my_shop", GemStack.config.name
   end
 
-  def test_env_files_only_in_local_environments
+  def test_env_files_in_every_environment
     GemStack.env = "production"
 
-    assert_empty GemStack.config.env_files
+    assert_equal %w[.env.production.local .env.local .env.production .env], GemStack.config.env_files
   end
 
   def test_test_logger_discards_by_default
