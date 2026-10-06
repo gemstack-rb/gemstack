@@ -2,7 +2,12 @@
 
 All GemStack gems are released together with one version.
 
-## Unreleased
+## 0.4.0
+
+Upgrading from 0.3.x: run `gemstack update` (it also updates the files `gemstack new` wrote). Apps that
+added realtime: copy `frontend/lib/gemstack/realtime.ts` from a fresh `gemstack add realtime` for
+WebSockets, `realtime.send`, presence and the `offline` status — the old client keeps working over
+Server-Sent Events. Validation error messages now list the failures (the `errors` hash is unchanged).
 
 - **Model enums**: `enum :status, %w[draft published archived], default: "draft"` — a string column
   limited to those values, validated, accepted only with those values by the request schema, typed

@@ -109,7 +109,7 @@ gemstack update            # move this app to the latest GemStack release, templ
 ## Upgrading GemStack
 
 ```bash
-gemstack update                          # the latest release (or: gemstack update 0.3.6)
+gemstack update                          # the latest release (or: gemstack update 0.4.0)
 gemstack update --templates --dry-run    # preview only the template step
 gemstack update --templates --from 0.3.5 # rerun it, comparing with 0.3.5's templates
 ```
