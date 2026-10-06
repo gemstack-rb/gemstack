@@ -84,7 +84,8 @@ module GemStack
     # templates (offline), files that differ are offered, never updated.
     class TemplateUpdate
       VERSION_FILE = ".gemstack/version"
-      # Managed elsewhere: the Gemfile by `gemstack update`/Bundler.
+      # Managed elsewhere: the Gemfile by `gemstack update`/Bundler. Migrations
+      # (db/migrations/) are the app's history and never part of an update.
       MANAGED = %w[Gemfile .gemstack/version].freeze
 
       # created/updated/saved (as FILE.new) are done; conflicts were left for you;
@@ -171,7 +172,7 @@ module GemStack
           AppGenerator.new(destination, options, output: StringIO.new).run
           Dir.glob("**/*", File::FNM_DOTMATCH, base: destination).sort.filter_map do |rel|
             full = File.join(destination, rel)
-            next unless File.file?(full) && !MANAGED.include?(rel)
+            next unless File.file?(full) && !MANAGED.include?(rel) && !rel.start_with?("db/migrations/")
 
             [rel, AppFile.new(File.binread(full), File.stat(full).mode)]
           end.to_h

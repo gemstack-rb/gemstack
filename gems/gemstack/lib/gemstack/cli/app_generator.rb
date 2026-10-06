@@ -66,6 +66,9 @@ module GemStack
             (!frontend? && %w[dot_node-version.tt dot_nvmrc.tt].include?(rel))
         })
         render_directory("frontend", File.join(destination, "frontend")) if frontend?
+        # Background jobs work from the start: the jobs table is part of every app
+        # with a database, so `gemstack dev` runs a worker right away.
+        JobGenerator.install_migration(destination, output: @output, timestamp: @options[:jobs_timestamp]) if database?
         install unless @options[:skip_install]
         git_init unless @options[:skip_git]
         summary
@@ -100,13 +103,15 @@ module GemStack
       end
 
       # Best effort: a missing or password-protected database server shouldn't fail `new`.
+      # Migrating creates the jobs table, so the dev worker can start at once.
       def create_database
-        @output.puts("  #{"run".rjust(9)}  gemstack db:create")
-        ok = unbundled { system("bin/gemstack", "db:create", chdir: destination, out: File::NULL, err: File::NULL) }
+        @output.puts("  #{"run".rjust(9)}  gemstack db:create db:migrate")
+        quiet = { chdir: destination, out: File::NULL, err: File::NULL }
+        ok = unbundled { system("bin/gemstack", "db:create", **quiet) && system("bin/gemstack", "db:migrate", **quiet) }
         return if ok
 
-        @output.puts("  #{"warning".rjust(9)}  couldn't create the database — " \
-                     "check config/database.yml (or set DATABASE_URL in .env), then run `gemstack db:create`")
+        @output.puts("  #{"warning".rjust(9)}  couldn't create or migrate the database — check config/database.yml " \
+                     "(or set DATABASE_URL in .env), then run `gemstack db:create db:migrate`")
       end
 
       def git_init

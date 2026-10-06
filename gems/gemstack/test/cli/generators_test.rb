@@ -19,9 +19,8 @@ class AppGeneratorTest < Minitest::Test
   end
 
   def files(root)
-    Dir.glob("**/*", File::FNM_DOTMATCH, base: root).reject do |f|
-      File.directory?(File.join(root, f))
-    end.sort
+    paths = Dir.glob("**/*", File::FNM_DOTMATCH, base: root).reject { |f| File.directory?(File.join(root, f)) }
+    paths.map { |f| f.sub(%r{\Adb/migrations/\d{14}_}, "db/migrations/TIMESTAMP_") }.sort
   end
 
   def test_generates_backend_and_frontend
@@ -33,7 +32,8 @@ class AppGeneratorTest < Minitest::Test
       app/jobs/application_job.rb app/mailers/application_mailer.rb app/mailers/templates/.keep
       app/models/application_model.rb app/serializers/application_serializer.rb bin/gemstack bin/gsk config.ru
       config/app.rb config/database.yml config/environments/development.rb config/environments/production.rb
-      config/environments/test.rb config/puma.rb config/routes.rb db/migrations/.keep db/seeds.rb
+      config/environments/test.rb config/puma.rb config/routes.rb db/migrations/.keep
+      db/migrations/TIMESTAMP_create_gemstack_jobs.rb db/seeds.rb
       frontend/app/globals.css frontend/app/layout.tsx frontend/app/page.module.css frontend/app/page.tsx
       frontend/app/providers.tsx
       frontend/lib/gemstack/client.ts frontend/next-env.d.ts frontend/next.config.ts frontend/package.json
@@ -147,7 +147,8 @@ class AppGeneratorTest < Minitest::Test
     assert_includes File.read(File.join(root, "bin/gemstack")), %(Gem.bin_path("gemstack-cli", "gemstack"))
     assert_includes File.read(File.join(root, "test/test_helper.rb")), "GemStack::DB::Testing.prepare!"
     assert_includes File.read(File.join(root, "test/test_helper.rb")), "GemStack::TestCase.include GemStack::Jobs::Testing"
-    assert_empty Dir.glob(File.join(root, "db/migrations/*.rb")), "no tables until the app uses jobs"
+    assert_equal 1, Dir.glob(File.join(root, "db/migrations/*_create_gemstack_jobs.rb")).size,
+                 "background jobs work from the start: every app with a database gets the jobs table"
     FileUtils.rm_rf(@tmp)
 
     root = generate(skip_database: true)
