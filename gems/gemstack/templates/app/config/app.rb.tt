@@ -34,7 +34,8 @@ GemStack.configure do |config|
   # config.http.pagination.max_per_page = 100      # the most a client may ask for with ?per_page=
 
   # ── Responses ───────────────────────────────────────────────────────────
-  # config.http.compression.enabled = true         # gzip/Brotli responses over 1 KB (add gem "brotli" for br)
+  # config.http.compression.enabled = true         # Brotli/gzip by Accept-Encoding, for text/JSON over 1 KB
+  # config.http.compression.encodings = %w[br gzip] # preference order; Brotli uses the brotli gem
   # config.http.etags = true                       # ETag + 304 Not Modified for GET responses
 
   # ── Logging ─────────────────────────────────────────────────────────────

@@ -61,6 +61,9 @@ class CompressionTest < Minitest::Test
 
     assert_equal ["gzip", [BIG]], [encoded[1]["content-encoding"], encoded[2]] # already encoded: untouched
     assert_nil compress(app_returning(BIG, status: 204))[1]["content-encoding"]
+    assert_nil compress(app_returning(BIG, status: 304))[1]["content-encoding"]
+    assert_nil compress(app_returning("", status: 101, headers: { "upgrade" => "websocket" }))[1]["content-encoding"],
+               "WebSocket handshakes are never touched"
     assert_nil compress(method: "HEAD")[1]["content-encoding"]
     assert_nil compress(accept: nil)[1]["content-encoding"]
     assert_nil compress(enabled: false)[1]["content-encoding"]
