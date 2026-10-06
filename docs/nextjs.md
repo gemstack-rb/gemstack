@@ -8,7 +8,7 @@ GemStack adds only three things:
 |---|---|
 | `lib/gemstack/client.ts` | the API client runtime (yours to edit) |
 | `app/providers.tsx` | TanStack Query provider with sensible retry defaults |
-| `next.config.ts` | `/api/*` rewrites for gateway-less production (HTTP only — not the realtime WebSocket) |
+| `next.config.ts` | `/api/*` rewrites for gateway-less production (HTTP, and the realtime WebSocket or stream) |
 
 ## One origin
 

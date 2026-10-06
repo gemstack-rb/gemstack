@@ -144,8 +144,10 @@ GEMSTACK_API_URL=http://api.internal:4000 npm start       # also used by Server 
 > **Set `GEMSTACK_API_URL` at build time.** Next.js evaluates `rewrites()` during
 > `next build`; changing it only at runtime does not change the rewrite target.
 
-Rewrites forward HTTP only: the realtime WebSocket (`/api/realtime`) needs option 1
-(a proxy routing `/api`, as Kamal sets up) or option 3.
+Realtime works through the rewrites: `next start` (Next.js 16) passes WebSocket upgrades
+on rewrites to the API, and Server-Sent Events stream through as plain HTTP. If something in
+front of Next.js drops WebSocket upgrades, the client (in its default `auto` mode) falls back to
+Server-Sent Events by itself — see docs/realtime.md.
 
 ### 3. Separate domains
 
@@ -171,9 +173,10 @@ and build the frontend with `NEXT_PUBLIC_GEMSTACK_API_URL=https://api.example.co
 - Brotli comes from `gem "brotli"` (in new apps' Gemfile; gzip otherwise); with a compressing CDN/proxy in front, either is fine
   (GemStack never re-compresses encoded responses).
 - Several processes/hosts? Use `config.cache.store = :redis` (`gem "redis-client"`, `REDIS_URL`).
-- Realtime is a WebSocket on `/api/realtime`: kamal-proxy routes it to the api role with the
-  rest of `/api` (verified). Behind nginx, set `proxy_http_version 1.1`, `Upgrade` and
-  `Connection "upgrade"` for that path, and `proxy_read_timeout` above the 15 s ping; see docs/realtime.md.
+- Realtime is `/api/realtime` (WebSocket, or Server-Sent Events as the fallback): kamal-proxy routes
+  it to the api role with the rest of `/api` (verified). Behind nginx, set `proxy_http_version 1.1`,
+  `Upgrade` and `Connection "upgrade"` for that path, and `proxy_read_timeout` above the 15 s ping
+  (the stream sends `X-Accel-Buffering: no`, so nginx doesn't buffer it); see docs/realtime.md.
 - `SECRET_KEY_BASE` (`openssl rand -hex 64`) — needed by storage signatures and any module using
   `GemStack.key_for`; keep it stable across deploys.
 - With auth: `SMTP_URL`, `MAIL_FROM` and `APP_URL` (the frontend's public URL, for email links); run a

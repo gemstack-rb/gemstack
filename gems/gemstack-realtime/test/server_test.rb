@@ -60,11 +60,12 @@ class RealtimeServerTest < Minitest::Test
     assert_equal 0, GemStack::Realtime.hub.subscriber_count("secret")
   end
 
-  def test_forbidden_and_invalid_requests_are_json_errors
-    forbidden = connect("channels=orders:7", "Authorization" => "Bearer 8")
+  def test_refused_channels_are_reported_and_invalid_requests_are_json_errors
+    refused = connect("channels=orders:7", "Authorization" => "Bearer 8")
 
-    assert_equal 403, forbidden.status
-    assert_equal 403, connect("channels=secret").status
+    assert_equal 200, refused.status, "the stream opens and says which channels were refused"
+    assert_equal %w[gemstack.denied orders:7], refused.next_event["data"].values_at("event", "channel")
+    assert_equal 403, connect("channels=news", "Origin" => "https://evil.example").status
     assert_equal 400, connect("channels=").status
     assert_equal 400, connect("channels=#{Array.new(60) { |i| "c#{i}" }.join(",")}").status
   end
@@ -134,10 +135,14 @@ class HeartbeatTest < Minitest::Test
     GemStack.config.realtime.heartbeat = 15
   end
 
-  def test_keep_alive_comments
+  def test_welcome_then_ping_events
     client = connect("channels=news")
 
     assert_includes client.raw, "retry: 3000"
-    assert_equal ": ping", client.raw.strip
+    welcome = client.next_event(skip: [])["data"]
+
+    assert_equal ["gemstack.welcome", "sse"], [welcome["event"], welcome.dig("data", "transport")]
+    assert_equal "gemstack.ping", client.next_event(skip: [])["data"]["event"], "visible to EventSource, unlike comments"
+    refute_includes client.raw, "id:", "system events don't reset Last-Event-ID"
   end
 end

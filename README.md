@@ -159,7 +159,7 @@ gems/
     test/<module>/   the tests of each module
   gemstack-cli/      the `gemstack` executable
   gemstack-auth/     authentication and policies (argon2)
-  gemstack-realtime/ WebSockets: channels, presence, browser messages (nio4r)
+  gemstack-realtime/ WebSockets + SSE: channels, presence, browser messages (nio4r)
 docs/                guides
 benchmarks/          performance measurements
 examples/shop/       an example application

@@ -64,7 +64,7 @@ released with one version:
 | `gemstack` | the framework: every module below except auth and realtime, the CLI code and generators | rack, json, sequel, mail, erubi, thor, puma, zeitwerk, bigdecimal, gemstack-cli |
 | `gemstack-cli` | only the `gemstack` executable (its code is `gemstack/cli` in the gemstack gem) | none |
 | `gemstack-auth` | authentication and policies — `gemstack add auth` | gemstack, argon2 (native) |
-| `gemstack-realtime` | WebSockets: channels, presence, browser messages — `gemstack add realtime` | gemstack, nio4r (native) |
+| `gemstack-realtime` | WebSockets and Server-Sent Events: channels, presence, browser messages — `gemstack add realtime` | gemstack, nio4r (native) |
 
 Auth and realtime are separate gems only because of their native
 dependencies. The names `gemstack-core`, `-cache`, `-schema`, `-http`, `-db`,
@@ -111,7 +111,7 @@ require graph):
 | `jobs` | `GemStack::Job`, adapters (database/async/inline/test/sidekiq), worker, test helpers |
 | `mail` | `GemStack::Mailer`, ERB templates (HTML-escaped), :smtp/:log/:test delivery, `deliver_later` job, test helpers |
 | `storage` | `GemStack::Storage`: disk and S3 services, signed URLs, direct uploads, disk endpoint, test helpers |
-| `realtime` *(gem)* | `GemStack.broadcast`, channels, WebSocket endpoint (hijack + nio4r), presence, brokers, test helpers |
+| `realtime` *(gem)* | `GemStack.broadcast`, channels, WebSocket and SSE endpoint (hijack + nio4r), presence, brokers, test helpers |
 | `auth` *(gem)* | Argon2id passwords, DB sessions (cookie), API/reset/verification tokens, controller helpers, CSRF origin check, `rate_limit`, `GemStack::Policy` |
 | `contract` | contract IR from routes/schemas/serializers → TypeScript types + clients, OpenAPI 3.1 |
 | `dev` | dev gateway, process supervisor, file watcher, background contract regeneration, toolchain detection |
@@ -290,12 +290,13 @@ https://example.com ──▶ kamal-proxy (gemstack generate deploy) / reverse p
 Supported shapes, in order of preference:
 
 1. **A proxy routing by path** — kamal-proxy (what `gemstack generate deploy`
-   sets up), Caddy, nginx, Traefik or a platform router. Required for
-   realtime: WebSocket upgrades go straight to Puma.
+   sets up), Caddy, nginx, Traefik or a platform router. WebSocket upgrades
+   go straight to Puma.
 2. **Next.js rewrites** — the generated `next.config.ts` rewrites `/api/:path*`
    to `GEMSTACK_API_URL`. Deploy Next.js publicly and the Ruby API privately;
-   still single origin, no extra proxy — but rewrites don't carry WebSocket
-   upgrades, so realtime needs option 1 or 3.
+   still single origin, no extra proxy. `next start` passes WebSocket upgrades
+   on rewrites; where something in front doesn't, the realtime client falls
+   back to Server-Sent Events.
 3. **Separate domains** (`api.example.com`) — set `NEXT_PUBLIC_GEMSTACK_API_URL`
    on the frontend and `config.http.cors.origins` on the backend (the realtime
    Origin check accepts those origins too).
@@ -401,17 +402,21 @@ GET /api/realtime + Upgrade ── Middleware: handshake, Origin check, identify
 
 - Optional: added with `gemstack add realtime`. Without it there's no
   middleware, no threads, no client code.
-- WebSockets are the transport. Framing (RFC 6455) is `WebSocket::Codec`;
-  the JSON protocol is in `WebSocket::Connection`. A `GET` without an upgrade
-  still serves the deprecated Server-Sent Events stream of the old client.
+- Two transports, same features (`config.realtime.transports`): WebSocket —
+  framing (RFC 6455) in `WebSocket::Codec`, the JSON protocol in
+  `WebSocket::Connection` — and Server-Sent Events (`Connection`, a `GET`
+  stream per set of channels, browser messages as `POST`s). Both register with
+  the same `Hub` and `Presence`.
 - `config/channels.rb`: `identify` (per connection), `channel` rules
   (deny by default, `presence: true`), `receive` handlers (browser → server).
 - Presence is replicated through the broker with periodic refreshes; entries
   from a process that stops refreshing lapse.
-- The browser client (`frontend/lib/gemstack/realtime.ts`) keeps one WebSocket
-  per tab, resubscribes with the last event id after reconnecting (backoff with
-  jitter), and exposes `useRealtime`, `usePresence`, `useRealtimeStatus` and
-  `realtime.send`.
+- The browser client (`frontend/lib/gemstack/realtime.ts`) keeps one
+  connection per tab (WebSocket by default; Server-Sent Events when set, or
+  when a WebSocket can't be opened), resubscribes with the last event id after
+  reconnecting (backoff with jitter; `offline` while the browser is), and
+  exposes `useRealtime`, `usePresence`, `useRealtimeStatus` and `realtime.send`
+  — the same API on either transport.
 
 ## 11. Performance strategy
 

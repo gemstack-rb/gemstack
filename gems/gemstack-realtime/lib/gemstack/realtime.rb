@@ -14,13 +14,12 @@ module GemStack
   #   realtime.subscribe(`orders:${id}`, (event) => { ... })
   #   await realtime.send("rooms:1", "message.create", { body })        // handled by `receive`
   #
-  # Transport: one WebSocket per browser tab on `<api_path>/realtime` (the
-  # same origin as the API), held by an event loop off the server's request
-  # threads. Subscriptions, client messages, presence and replay after
-  # reconnects are multiplexed over it. Fan-out between processes goes through
-  # a broker (PostgreSQL LISTEN/NOTIFY, or Redis). Channels are deny-by-default:
-  # declare them in config/channels.rb. (GET without an Upgrade still serves the
-  # deprecated Server-Sent Events stream for apps on the old client.)
+  # Transports: one connection per browser tab on `<api_path>/realtime` (the
+  # same origin as the API) — a WebSocket, or a Server-Sent Events stream plus
+  # POSTs — held by an event loop off the server's request threads. Both carry
+  # subscriptions, client messages, presence and replay after reconnects.
+  # Fan-out between processes goes through a broker (PostgreSQL LISTEN/NOTIFY,
+  # or Redis). Channels are deny-by-default: declare them in config/channels.rb.
   module Realtime
     class Config < Settings
       setting :path, default: -> { "#{GemStack.config.http.api_path}/realtime" }
@@ -54,6 +53,13 @@ module GemStack
       setting :allowed_origins, default: nil
       # Seconds between presence refreshes; an entry lapses after three.
       setting :presence_interval, default: 15
+      # Seconds a dropped connection stays present (covers reconnects).
+      setting :presence_grace, default: 3
+      # Which transports the endpoint serves: :websocket (one connection,
+      # both directions) and :sse (Server-Sent Events down, POST up — works
+      # wherever plain HTTP does). The browser client's NEXT_PUBLIC_GEMSTACK_REALTIME
+      # picks one; "auto" tries WebSocket first and falls back to SSE.
+      setting :transports, default: %i[websocket sse]
       # A client that falls this far behind (bytes buffered) is disconnected.
       setting :max_buffer, default: 1024 * 1024
       # Reconnect delay the browser is told to use (ms).
@@ -71,7 +77,9 @@ module GemStack
     Message = Struct.new(:id, :channel, :event, :data) do
       def to_h = { id: id, channel: channel, event: event, data: data }
       def json = @json ||= HTTP::JSONCodec.default.dump(to_h)
-      def sse = "id: #{id}\ndata: #{json}\n\n"
+      # Without an id (presence changes, system events) there's no id line: an
+      # empty one would reset the browser's Last-Event-ID.
+      def sse = "#{"id: #{id}\n" if id}data: #{json}\n\n"
       # Encoded once per broadcast, however many connections receive it.
       def ws_frame = @ws_frame ||= WebSocket::Codec.text(%({"type":"event",#{json.delete_prefix("{")}))
 

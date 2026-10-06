@@ -106,8 +106,10 @@ See [background jobs](background-jobs.md#configuration): `config.jobs.adapter`,
 ### Realtime (`gemstack-realtime`)
 
 See [realtime](realtime.md#configuration): `config.realtime.broker`, `path`,
-`heartbeat`, `replay_size`, `replay_ttl`, `max_channels`, `max_buffer`,
-`retry_ms`, `redis_url`, `redis_channel`.
+`transports`, `heartbeat`, `replay_size`, `replay_ttl`, `max_channels`,
+`max_message_size`, `max_messages_per_second`, `workers`, `allowed_origins`,
+`presence_interval`, `presence_grace`, `max_buffer`, `retry_ms`, `redis_url`,
+`redis_channel`. The browser's transport: `NEXT_PUBLIC_GEMSTACK_REALTIME`.
 
 ### Auth, mail, storage (optional modules)
 

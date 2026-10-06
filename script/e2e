@@ -53,17 +53,22 @@ step "add realtime"
 bin/gemstack add realtime
 cat > config/channels.rb <<'RUBY'
 GemStack.channels do
-  identify { |_request| { id: "e2e-client", name: "E2E" } }
+  identify { |request| { id: request.GET["user"] || "e2e-client", name: "E2E" } }
   channel "products"
   channel "e2e", presence: true
   receive "e2e" do |message|
-    GemStack.broadcast("e2e", "echoed", message.data)
+    GemStack.broadcast(message.data["to"] || "e2e", "echoed", message.data)
     message.data
   end
   channel "orders:*" do |id, request|
     request.get_header("HTTP_AUTHORIZATION") == "Bearer #{id}"
   end
 end
+RUBY
+cat >> config/app.rb <<'RUBY'
+
+# e2e: a server with only some realtime transports (auto must fall back to SSE).
+GemStack.configure { |config| config.realtime.transports = ENV["E2E_REALTIME_TRANSPORTS"].split(",").map(&:to_sym) } if ENV["E2E_REALTIME_TRANSPORTS"]
 RUBY
 cat > test/realtime_test.rb <<'RUBY'
 require_relative "test_helper"
@@ -118,46 +123,92 @@ step "migrate + Ruby tests"
 bin/gemstack db:migrate
 bin/gemstack test
 
-step "realtime client over WebSocket (subscribe, send, presence, reconnect + replay)"
+step "realtime client: WebSocket, Server-Sent Events, auto (send, presence, resubscribe, reconnect + replay, offline)"
 PORT_RT=$(ruby -rsocket -e 's = TCPServer.new("127.0.0.1", 0); print s.addr[1]; s.close')
-bin/gemstack server -p "$PORT_RT" > "$WORK/realtime-server.log" 2>&1 &
-SERVER_PID=$!
-for _ in $(seq 60); do curl -fsS "http://127.0.0.1:$PORT_RT/api/health" > /dev/null 2>&1 && break; sleep 0.5; done
+start_api() {
+  bin/gemstack server -p "$PORT_RT" > "$WORK/realtime-server.log" 2>&1 &
+  SERVER_PID=$!
+  for _ in $(seq 60); do curl -fsS "http://127.0.0.1:$PORT_RT/api/health" > /dev/null 2>&1 && break; sleep 0.5; done
+}
+start_api
 (cd frontend && npx tsc --outDir "$WORK/rt" --module commonjs --target es2022 --skipLibCheck --esModuleInterop \
   lib/gemstack/realtime.ts lib/gemstack/client.ts)
 cat > "$WORK/realtime-client.js" <<'JS'
-const port = process.argv[2];
+// node realtime-client.js <page port> <compiled client dir> <expected transport> <API port>
+// The page's origin is <page port>: the API itself, or Next.js proxying /api to it.
+const [port, dir, expected, apiPort] = process.argv.slice(2);
+const page = `http://127.0.0.1:${port}`;
+const api = `http://127.0.0.1:${apiPort}/api/realtime`;
 global.window = { location: { protocol: "http:", host: `127.0.0.1:${port}` }, addEventListener() {} };
-const { realtime } = require(`${process.argv[3]}/realtime.js`);
-const until = (check, what) => new Promise((resolve, reject) => {
+const nativeFetch = fetch;
+const NativeEventSource = EventSource;
+global.fetch = (url, init) => nativeFetch(new URL(url, page), init); // relative, as in a browser
+global.EventSource = class extends NativeEventSource { constructor(url, init) { super(new URL(url, page), init); } };
+const { realtime } = require(`${dir}/realtime.js`);
+
+const until = (check, what, ms = 8000) => new Promise((resolve, reject) => {
   const started = Date.now();
-  const poll = () => (check() ? resolve() : Date.now() - started > 8000 ? reject(new Error(`timeout: ${what}`)) : setTimeout(poll, 20));
+  const poll = () => (check() ? resolve() : Date.now() - started > ms ? reject(new Error(`timeout: ${what} (status ${realtime.status})`)) : setTimeout(poll, 20));
   poll();
 });
+const say = (data) => nativeFetch(api, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ channel: "e2e", event: "echo", data }) });
+const here = (id) => realtime.presenceOf("e2e").some((p) => p.id === id);
+const said = (events, text) => events.some((e) => e.data && e.data.text === text);
+
 (async () => {
   const events = [];
   realtime.subscribe("e2e", (event) => events.push(event));
   await until(() => realtime.status === "open", "connected");
+  if (realtime.transport !== expected) throw new Error(`transport ${realtime.transport}, expected ${expected}`);
+
   const reply = await realtime.send("e2e", "echo", { text: "hi" });
   if (reply.text !== "hi") throw new Error(`reply ${JSON.stringify(reply)}`);
-  await until(() => events.some((e) => e.event === "echoed" && e.data.text === "hi"), "broadcast from receive");
-  await until(() => realtime.presenceOf("e2e").some((p) => p.id === "e2e-client"), "presence");
+  await until(() => said(events, "hi"), "broadcast from receive");
+  await until(() => here("e2e-client"), "own presence");
+
+  const other = new NativeEventSource(`${api}?channels=e2e&user=other`);
+  await until(() => here("other"), "another user's join");
+  other.close();
+  await until(() => !here("other"), "another user's leave");
+
+  // Another channel while connected (Server-Sent Events: the stream reopens).
+  const products = [];
+  const off = realtime.subscribe("products", (event) => products.push(event));
+  await until(() => realtime.status === "open", "open after subscribing");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  await say({ text: "to products", to: "products" });
+  await until(() => said(products, "to products"), "event on the added channel");
+  off();
 
   // Drop the connection and broadcast while it's down: the client reconnects,
   // resubscribes with its last event id and gets the missed event replayed.
-  const other = new WebSocket(`ws://127.0.0.1:${port}/api/realtime`);
-  await new Promise((resolve) => other.addEventListener("message", (m) => JSON.parse(m.data).type === "welcome" && resolve()));
-  other.send(JSON.stringify({ type: "subscribe", channel: "e2e" }));
-  realtime.socket.close();
+  if (realtime.transport === "websocket") realtime.socket.close();
+  else { const stream = realtime.stream; stream.close(); stream.onerror(); }
   await until(() => realtime.status === "reconnecting", "noticed the drop");
-  other.send(JSON.stringify({ type: "message", channel: "e2e", event: "echo", data: { text: "while away" } }));
-  await until(() => events.some((e) => e.data && e.data.text === "while away"), "replayed after reconnect");
-  if (realtime.status !== "open") throw new Error(`status ${realtime.status}`);
-  console.log("realtime client OK");
+  await say({ text: "while away" });
+  await until(() => said(events, "while away"), "replayed after reconnect");
+  await until(() => realtime.status === "open" && here("e2e-client"), "open again with presence");
+
+  realtime.wentOffline();
+  if (realtime.status !== "offline") throw new Error(`status ${realtime.status} when offline`);
+  realtime.reconnectNow();
+  await until(() => realtime.status === "open", "online again");
+  if ((await realtime.send("e2e", "echo", { text: "back" })).text !== "back") throw new Error("send after offline");
+  console.log(`realtime client OK over ${realtime.transport}`);
   process.exit(0);
 })().catch((error) => { console.error(error); process.exit(1); });
 JS
-NODE_PATH="$PWD/frontend/node_modules" node "$WORK/realtime-client.js" "$PORT_RT" "$WORK/rt" || { tail -30 "$WORK/realtime-server.log"; kill $SERVER_PID; exit 1; }
+realtime_client() { # <page port> <NEXT_PUBLIC_GEMSTACK_REALTIME> <expected transport>
+  NEXT_PUBLIC_GEMSTACK_REALTIME="$2" NODE_PATH="$PWD/frontend/node_modules" \
+    node --experimental-eventsource --no-warnings "$WORK/realtime-client.js" "$1" "$WORK/rt" "$3" "$PORT_RT" ||
+    { tail -30 "$WORK/realtime-server.log"; kill $SERVER_PID; exit 1; }
+}
+realtime_client "$PORT_RT" websocket websocket
+realtime_client "$PORT_RT" sse sse
+realtime_client "$PORT_RT" auto websocket
+kill $SERVER_PID; wait $SERVER_PID 2> /dev/null || true
+E2E_REALTIME_TRANSPORTS=sse start_api # WebSocket refused: auto falls back
+realtime_client "$PORT_RT" auto sse
 kill $SERVER_PID; wait $SERVER_PID 2> /dev/null || true
 
 step "destroy preserves data, migrations and custom files"
@@ -273,8 +324,20 @@ bundle install --quiet
 step "TypeScript"
 (cd frontend && npx tsc --noEmit)
 
-step "Next.js production build"
-(cd frontend && npx next build > "$WORK/build.log" 2>&1) || { tail -40 "$WORK/build.log"; exit 1; }
+step "Next.js production build (proxying /api with rewrites)"
+(cd frontend && GEMSTACK_API_URL="http://127.0.0.1:$PORT_RT" npx next build > "$WORK/build.log" 2>&1) ||
+  { tail -40 "$WORK/build.log"; exit 1; }
+
+step "realtime client through Next.js (next start, /api rewritten to the API)"
+start_api
+PORT_WEB=$(ruby -rsocket -e 's = TCPServer.new("127.0.0.1", 0); print s.addr[1]; s.close')
+(cd frontend && exec node_modules/.bin/next start -p "$PORT_WEB" > "$WORK/next.log" 2>&1) &
+NEXT_PID=$!
+for _ in $(seq 60); do curl -fsS "http://127.0.0.1:$PORT_WEB/api/health" > /dev/null 2>&1 && break; sleep 0.5; done
+realtime_client "$PORT_WEB" websocket websocket # next start passes WebSocket upgrades on rewrites
+realtime_client "$PORT_WEB" sse sse
+realtime_client "$PORT_WEB" auto websocket
+kill $NEXT_PID $SERVER_PID; wait $NEXT_PID $SERVER_PID 2> /dev/null || true
 
 step "cleanup"
 bin/gemstack db:drop > /dev/null

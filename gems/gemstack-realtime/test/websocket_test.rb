@@ -13,7 +13,9 @@ class WebSocketTest < Minitest::Test
     GemStack::Realtime.broker = GemStack::Realtime::Brokers::Memory.new
     GemStack::Realtime.channels.clear
     @config = GemStack.config.realtime
-    @saved = %i[heartbeat max_messages_per_second max_message_size allowed_origins].to_h { |k| [k, @config.public_send(k)] }
+    @saved = %i[heartbeat max_messages_per_second max_message_size allowed_origins presence_grace transports]
+             .to_h { |k| [k, @config.public_send(k)] }
+    @config.presence_grace = 0.3
     GemStack.channels do
       identify do |request|
         id = request.get_header("HTTP_AUTHORIZATION").to_s[/Bearer (\d+)/, 1]
@@ -144,6 +146,35 @@ class WebSocketTest < Minitest::Test
     assert_equal({ "type" => "presence", "channel" => "rooms:1", "event" => "leave", "id" => "2" },
                  alice.next_json("presence"), "leaves only when the last tab closes, and only once")
     assert_equal(["1"], GemStack::Realtime.present_on("rooms:1").map { |p| p["id"] })
+  end
+
+  def test_a_quick_reconnect_is_not_a_leave_and_join
+    alice = user(1)
+    alice.subscribe("rooms:1")
+    bob = user(2)
+    bob.subscribe("rooms:1")
+    alice.next_json("presence") # bob joined
+    bob.close
+    user(2).subscribe("rooms:1") # back within the grace period
+    sleep 0.6
+
+    assert_equal %w[1 2], GemStack::Realtime.present_on("rooms:1").map { |p| p["id"] }.sort
+    alice.send_json(type: "ping")
+
+    assert_equal "pong", alice.next_json["type"], "no presence event in between"
+  end
+
+  def test_transports_setting
+    @config.transports = %i[sse]
+    disabled = websocket
+
+    assert_equal 404, disabled.status
+    assert_includes disabled.body, "transport_disabled"
+    @config.transports = %i[websocket]
+    sse = connect("channels=news")
+
+    assert_equal 426, sse.status
+    assert_equal "websocket", sse.headers["upgrade"]
   end
 
   def test_anonymous_connections_are_not_present

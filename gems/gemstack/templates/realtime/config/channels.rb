@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
-# What browsers may do over the realtime WebSocket (docs/realtime.md).
+# What browsers may do over realtime connections (docs/realtime.md).
 # Anything not listed here is refused. `*` matches one segment and is passed
-# to the block, together with the handshake request (cookies, headers).
+# to the block, together with the connection's request (cookies, headers).
 #
 #   GemStack.broadcast("orders:#{order.id}", "order.updated", order)   # server → browsers
 #

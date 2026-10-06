@@ -77,11 +77,8 @@ module GemStack
 
         # Called by the Streamer once the socket is gone.
         def disconnected
-          tracked = @presence.dup
+          @presence.each { |channel, key| Realtime.presence.untrack_later(channel, key) }
           @presence.clear
-          return if tracked.empty?
-
-          @dispatcher.schedule(-> { tracked.each { |channel, key| Realtime.presence.untrack(channel, key) } })
         end
 
         # ── dispatcher ───────────────────────────────────────────────────

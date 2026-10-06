@@ -8,14 +8,25 @@
  *
  *   useRealtime("products", () => queryClient.invalidateQueries({ queryKey: ["products"] }));
  *   const people = usePresence("rooms:1"); // [{ id, meta }] — channels declared with presence: true
+ *   const status = useRealtimeStatus();    // idle | connecting | open | reconnecting | offline
  *
- * One WebSocket per tab, to `<api path>/realtime` on the API's origin (the
+ * One connection per tab to `<api path>/realtime` on the API's origin (the
  * page's own origin unless NEXT_PUBLIC_GEMSTACK_API_URL says otherwise), so
- * the session cookie authenticates it. It connects when the first channel is
- * subscribed and closes after the last one goes. If it drops, it reconnects
- * with backoff and resubscribes; the server replays what was missed, or sends
- * `gemstack.gap` to the channel's handlers when it can't, so you can refetch.
- * A refused channel's handlers get `gemstack.denied`.
+ * the session cookie authenticates it. Two transports, same features:
+ *
+ *   websocket  one WebSocket carries subscriptions, events, presence and send()
+ *   sse        an EventSource stream for the subscribed channels (reopened
+ *              when they change), and send() as a POST
+ *
+ * NEXT_PUBLIC_GEMSTACK_REALTIME picks one: "auto" (default: WebSocket, then
+ * Server-Sent Events if a WebSocket can't be opened — e.g. a proxy that
+ * doesn't pass WebSocket upgrades), "websocket" or "sse".
+ *
+ * It connects when the first channel is subscribed and closes after the last
+ * one goes. If it drops, it reconnects with backoff (at once when the browser
+ * comes back online) and resubscribes; the server replays what was missed, or
+ * sends `gemstack.gap` to the channel's handlers when it can't, so you can
+ * refetch. A refused channel's handlers get `gemstack.denied`.
  */
 "use client";
 
@@ -30,7 +41,9 @@ export type RealtimeEvent<T = unknown> = {
 };
 
 export type RealtimeHandler<T = unknown> = (event: RealtimeEvent<T>) => void;
-export type RealtimeStatus = "idle" | "connecting" | "open" | "reconnecting";
+export type RealtimeStatus = "idle" | "connecting" | "open" | "reconnecting" | "offline";
+export type RealtimeTransport = "websocket" | "sse";
+export type RealtimeMode = RealtimeTransport | "auto";
 export type PresenceEntry<M = Record<string, unknown>> = { id: string; meta?: M };
 
 /** Delivered to a channel's handlers when events were missed and can't be replayed: refetch. */
@@ -48,6 +61,9 @@ export class RealtimeError extends Error {
   }
 }
 
+type ErrorBody = { code: string; message: string };
+
+// WebSocket messages.
 type ServerMessage =
   | { type: "welcome"; connection_id: string; heartbeat: number }
   | { type: "subscribed"; channel: string; presence?: PresenceEntry[] }
@@ -56,46 +72,82 @@ type ServerMessage =
   | { type: "event"; id: string; channel: string; event: string; data: unknown }
   | { type: "gap"; channel: string }
   | { type: "presence"; channel: string; event: "join" | "leave"; id: string; meta?: Record<string, unknown> }
-  | { type: "reply"; ref: number; ok: boolean; data?: unknown; error?: { code: string; message: string } }
+  | { type: "reply"; ref: number; ok: boolean; data?: unknown; error?: ErrorBody }
   | { type: "error"; code: string; message: string; ref?: number }
   | { type: "pong" };
 
+// Server-Sent Events: the application's events, plus gemstack.* and presence.* ones.
+type StreamMessage = { id: string | null; channel: string | null; event: string; data: unknown };
+
+type Outgoing = { type: string; channel?: string; event?: string; data?: unknown; ref?: number; last_id?: string };
 type Pending = { resolve: (data: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> };
 
 const MAX_BACKOFF_MS = 30_000;
 const PING_EVERY_MS = 25_000;
+const WEBSOCKET_OPEN_TIMEOUT_MS = 5_000; // auto: then use Server-Sent Events
+const REOPEN_DELAY_MS = 50; // Server-Sent Events: one reopen for a burst of subscription changes
 
-function realtimeUrl(): string {
-  const url = apiUrl("/realtime");
+function configuredMode(): RealtimeMode {
+  const mode = process.env.NEXT_PUBLIC_GEMSTACK_REALTIME;
+  return mode === "websocket" || mode === "sse" ? mode : "auto";
+}
+
+function endpoint(): string {
+  return apiUrl("/realtime");
+}
+
+function crossOrigin(): boolean {
+  return /^https?:/i.test(endpoint());
+}
+
+function websocketUrl(): string {
+  const url = endpoint();
   if (/^https?:/i.test(url)) return url.replace(/^http/i, "ws");
   const scheme = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${scheme}//${window.location.host}${url}`;
 }
 
-class RealtimeClient {
+function browserOffline(): boolean {
+  return typeof navigator !== "undefined" && navigator.onLine === false;
+}
+
+export class RealtimeClient {
   status: RealtimeStatus = "idle";
+  /** The transport of the open connection. */
+  transport: RealtimeTransport | null = null;
+  readonly mode: RealtimeMode;
   private socket: WebSocket | null = null;
+  private stream: EventSource | null = null;
   private handlers = new Map<string, Set<RealtimeHandler>>();
   private lastIds = new Map<string, string>();
+  private lastStreamId: string | null = null;
   private seen = new Map<string, Set<string>>();
   private presence = new Map<string, Map<string, PresenceEntry>>();
   private pending = new Map<number, Pending>();
-  private outbox: Record<string, unknown>[] = [];
+  private outbox: Outgoing[] = [];
   private listeners = new Set<() => void>();
   private nextRef = 1;
   private attempts = 0;
   private heartbeatMs = 15_000;
   private lastMessageAt = 0;
+  private websocketWorks = false; // auto: a WebSocket opened, so a later drop is just a drop
+  private websocketFailed = false; // auto: none ever opened, so this page uses Server-Sent Events
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reopenTimer: ReturnType<typeof setTimeout> | null = null;
+  private openTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private closeScheduled = false;
+
+  constructor(mode: RealtimeMode = configuredMode()) {
+    this.mode = mode;
+  }
 
   subscribe<T = unknown>(channel: string, handler: RealtimeHandler<T>): () => void {
     let set = this.handlers.get(channel);
     if (!set) {
       set = new Set();
       this.handlers.set(channel, set);
-      this.write({ type: "subscribe", channel, last_id: this.lastIds.get(channel) });
+      this.subscriptionsChanged({ type: "subscribe", channel, last_id: this.lastIds.get(channel) });
     }
     set.add(handler as RealtimeHandler);
     this.ensureConnected();
@@ -106,13 +158,13 @@ class RealtimeClient {
       this.presence.delete(channel);
       this.lastIds.delete(channel);
       this.seen.delete(channel);
-      this.write({ type: "unsubscribe", channel });
+      this.subscriptionsChanged({ type: "unsubscribe", channel });
       this.notify();
       this.scheduleIdleClose();
     };
   }
 
-  /** Sends a message to a subscribed channel; resolves with the `receive` handler's reply. */
+  /** Sends a message to a channel's `receive` handler; resolves with its return value. */
   send<T = unknown>(channel: string, event: string, data?: unknown, { timeout = 10_000 } = {}): Promise<T> {
     const ref = this.nextRef++;
     return new Promise<T>((resolve, reject) => {
@@ -121,8 +173,13 @@ class RealtimeClient {
         reject(new RealtimeError("timeout", `no reply to ${event} on ${channel}`));
       }, timeout);
       this.pending.set(ref, { resolve: resolve as (data: unknown) => void, reject, timer });
-      this.write({ type: "message", channel, event, data, ref });
-      this.ensureConnected();
+      const message = { type: "message", channel, event, data, ref };
+      if (this.preferred() === "sse") {
+        void this.post(message);
+      } else {
+        this.write(message);
+        this.ensureConnected();
+      }
     });
   }
 
@@ -131,11 +188,19 @@ class RealtimeClient {
     return [...(this.presence.get(channel)?.values() ?? [])];
   }
 
-  /** Skips the backoff wait, e.g. when the browser comes back online. */
+  /** Reconnects now instead of waiting for the backoff (called when the browser comes back online). */
   reconnectNow() {
-    if (!this.reconnectTimer) return;
-    clearTimeout(this.reconnectTimer);
+    if (this.socket || this.stream) return;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.attempts = 0;
     this.connect();
+  }
+
+  /** Drops the connection until reconnectNow() (called when the browser goes offline). */
+  wentOffline() {
+    this.disconnect();
+    if (this.wanted()) this.setStatus("offline");
   }
 
   /** Calls listener(status) whenever the connection status changes. */
@@ -154,31 +219,39 @@ class RealtimeClient {
 
   // ── connection ───────────────────────────────────────────────────────
 
+  private preferred(): RealtimeTransport {
+    if (this.mode === "sse" || typeof WebSocket === "undefined") return "sse";
+    if (this.mode === "websocket") return "websocket";
+    return this.websocketFailed ? "sse" : "websocket";
+  }
+
+  // A stream only carries subscriptions; a WebSocket also carries send().
+  private wanted(): boolean {
+    return this.handlers.size > 0 || (this.preferred() === "websocket" && this.pending.size > 0);
+  }
+
   private ensureConnected() {
-    if (typeof window === "undefined" || typeof WebSocket === "undefined") return;
-    if (this.socket || this.reconnectTimer) return;
-    this.connect();
+    if (typeof window === "undefined") return;
+    if (this.socket || this.stream || this.reconnectTimer || this.status === "offline") return;
+    if (this.preferred() === "websocket") return this.connect();
+    // Let the components mounting together subscribe first: one stream for all of them.
+    this.setStatus("connecting");
+    this.reconnectTimer = setTimeout(() => this.connect(), 0);
   }
 
-  private connect() {
+  private connect(reopening = false) {
     this.reconnectTimer = null;
-    if (this.handlers.size === 0 && this.pending.size === 0) return this.setStatus("idle");
+    if (!this.wanted()) return this.setStatus("idle");
+    if (browserOffline()) return this.setStatus("offline");
 
-    this.setStatus(this.attempts === 0 ? "connecting" : "reconnecting");
-    const socket = new WebSocket(realtimeUrl());
-    this.socket = socket;
-    socket.onmessage = (message) => this.receive(message.data);
-    socket.onclose = () => this.dropped(socket);
-    socket.onerror = () => socket.close();
+    if (!reopening) this.setStatus(this.attempts === 0 ? "connecting" : "reconnecting");
+    if (this.preferred() === "websocket") this.openSocket();
+    else this.openStream();
   }
 
-  private dropped(socket: WebSocket) {
-    if (this.socket !== socket) return;
-    this.socket = null;
-    if (this.pingTimer) clearInterval(this.pingTimer);
-    this.pingTimer = null;
-    if (this.handlers.size === 0 && this.pending.size === 0) return this.setStatus("idle");
-
+  private retry() {
+    if (!this.wanted()) return this.setStatus("idle");
+    if (browserOffline()) return this.setStatus("offline");
     // Exponential backoff with jitter: 0.5 s, 1 s, 2 s … up to 30 s.
     const delay = Math.min(MAX_BACKOFF_MS, 500 * 2 ** this.attempts) * (0.5 + Math.random() / 2);
     this.attempts++;
@@ -186,10 +259,101 @@ class RealtimeClient {
     this.reconnectTimer = setTimeout(() => this.connect(), delay);
   }
 
-  private opened(heartbeat: number) {
+  private opened(transport: RealtimeTransport, heartbeat: number) {
     this.attempts = 0;
+    this.transport = transport;
     this.heartbeatMs = heartbeat * 1000;
     this.setStatus("open");
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    this.pingTimer = setInterval(() => this.ping(), PING_EVERY_MS);
+  }
+
+  // A connection that has been silent for three heartbeats is dead: replace it.
+  private ping() {
+    if (Date.now() - this.lastMessageAt > this.heartbeatMs * 3) {
+      if (this.socket) return this.socket.close();
+      if (this.stream) return this.streamDropped(this.stream);
+    }
+    if (this.socket) this.write({ type: "ping" });
+  }
+
+  private disconnect() {
+    for (const timer of [this.reconnectTimer, this.reopenTimer, this.openTimer]) if (timer) clearTimeout(timer);
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    this.reconnectTimer = this.reopenTimer = this.openTimer = this.pingTimer = null;
+    const { socket, stream } = this;
+    this.socket = null;
+    this.stream = null;
+    socket?.close(1000);
+    stream?.close();
+  }
+
+  private scheduleIdleClose() {
+    if (this.closeScheduled) return;
+    this.closeScheduled = true;
+    setTimeout(() => {
+      this.closeScheduled = false;
+      if (this.wanted()) return;
+      this.outbox = [];
+      this.disconnect();
+      this.setStatus("idle");
+    }, 1000);
+  }
+
+  private subscriptionsChanged(message: Outgoing) {
+    if (this.preferred() === "websocket") return this.write(message);
+    // The stream's URL lists its channels: reopen it (presence rides out a quick reopen).
+    if (!this.stream || this.reopenTimer) return;
+    this.reopenTimer = setTimeout(() => {
+      this.reopenTimer = null;
+      const stream = this.stream;
+      if (!stream) return;
+      this.stream = null;
+      stream.close();
+      this.connect(true);
+    }, REOPEN_DELAY_MS);
+  }
+
+  // ── WebSocket ────────────────────────────────────────────────────────
+
+  private openSocket() {
+    const socket = new WebSocket(websocketUrl());
+    this.socket = socket;
+    socket.onmessage = (message) => this.receive(message.data);
+    // Either one means it's gone (some runtimes skip `close` after a failed handshake).
+    socket.onclose = () => this.socketDropped(socket);
+    socket.onerror = () => this.socketDropped(socket);
+    if (this.mode === "auto" && !this.websocketWorks) {
+      this.openTimer = setTimeout(() => socket.close(), WEBSOCKET_OPEN_TIMEOUT_MS);
+    }
+  }
+
+  private socketDropped(socket: WebSocket) {
+    if (this.socket !== socket) return;
+    this.socket = null;
+    if (this.openTimer) clearTimeout(this.openTimer);
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    this.openTimer = this.pingTimer = null;
+    if (this.mode === "auto" && !this.websocketWorks && !browserOffline()) return this.fallBackToStream();
+    this.retry();
+  }
+
+  // auto: no WebSocket got through (a proxy in the way), so this page uses
+  // Server-Sent Events from now on.
+  private fallBackToStream() {
+    this.websocketFailed = true;
+    console.info("[realtime] WebSocket unavailable; using Server-Sent Events");
+    const queued = this.outbox.filter((message) => message.type === "message");
+    this.outbox = [];
+    queued.forEach((message) => void this.post(message));
+    this.connect();
+  }
+
+  private socketOpened(heartbeat: number) {
+    if (this.openTimer) clearTimeout(this.openTimer);
+    this.openTimer = null;
+    this.websocketWorks = true;
+    this.opened("websocket", heartbeat);
     // Resubscribe everything (with the last event seen, for replay), then flush what waited.
     const resubscribe = [...this.handlers.keys()].map((channel) => ({
       type: "subscribe",
@@ -200,37 +364,12 @@ class RealtimeClient {
     const queued = this.outbox.filter((message) => message.type !== "subscribe" && message.type !== "unsubscribe");
     this.outbox = [];
     [...resubscribe, ...queued].forEach((message) => this.socket?.send(JSON.stringify(message)));
-    if (this.pingTimer) clearInterval(this.pingTimer);
-    this.pingTimer = setInterval(() => this.ping(), PING_EVERY_MS);
   }
 
-  // A connection that has been silent for three heartbeats is dead: replace it.
-  private ping() {
-    if (Date.now() - this.lastMessageAt > this.heartbeatMs * 3) return this.socket?.close();
-    this.write({ type: "ping" });
-  }
-
-  private write(message: Record<string, unknown>) {
+  private write(message: Outgoing) {
     if (this.socket?.readyState === WebSocket.OPEN && this.status === "open") this.socket.send(JSON.stringify(message));
-    else this.outbox.push(message);
+    else if (message.type !== "ping") this.outbox.push(message);
   }
-
-  private scheduleIdleClose() {
-    if (this.closeScheduled) return;
-    this.closeScheduled = true;
-    setTimeout(() => {
-      this.closeScheduled = false;
-      if (this.handlers.size > 0 || this.pending.size > 0) return;
-      if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-      this.outbox = [];
-      this.socket?.close(1000);
-      this.socket = null;
-      this.setStatus("idle");
-    }, 1000);
-  }
-
-  // ── messages ─────────────────────────────────────────────────────────
 
   private receive(raw: unknown) {
     this.lastMessageAt = Date.now();
@@ -242,7 +381,7 @@ class RealtimeClient {
     }
     switch (message.type) {
       case "welcome":
-        return this.opened(message.heartbeat);
+        return this.socketOpened(message.heartbeat);
       case "event":
         return this.event(message);
       case "gap":
@@ -250,13 +389,10 @@ class RealtimeClient {
       case "denied":
         return this.emit(message.channel, { id: null, channel: message.channel, event: DENIED_EVENT, data: message.code });
       case "subscribed":
-        if (message.presence) {
-          this.presence.set(message.channel, new Map(message.presence.map((entry) => [entry.id, entry])));
-          this.notify();
-        }
+        if (message.presence) this.presenceState(message.channel, message.presence);
         return;
       case "presence":
-        return this.presenceChange(message);
+        return this.presenceChange(message.channel, message.event, message.id, message.meta);
       case "reply":
         return this.reply(message.ref, message.ok, message.data, message.error);
       case "error":
@@ -265,7 +401,80 @@ class RealtimeClient {
     }
   }
 
-  private event(message: Extract<ServerMessage, { type: "event" }>) {
+  // ── Server-Sent Events ───────────────────────────────────────────────
+
+  private openStream() {
+    if (typeof EventSource === "undefined") return this.setStatus("idle");
+    const query = new URLSearchParams({ channels: [...this.handlers.keys()].join(",") });
+    if (this.lastStreamId) query.set("last_event_id", this.lastStreamId);
+    const stream = new EventSource(`${endpoint()}?${query}`, { withCredentials: crossOrigin() });
+    this.stream = stream;
+    stream.onmessage = (message) => this.receiveStream(message.data);
+    // Reconnect on this client's schedule and with the current channels, not EventSource's.
+    stream.onerror = () => this.streamDropped(stream);
+  }
+
+  private streamDropped(stream: EventSource) {
+    stream.close();
+    if (this.stream !== stream) return;
+    this.stream = null;
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    this.pingTimer = null;
+    this.retry();
+  }
+
+  private receiveStream(raw: string) {
+    this.lastMessageAt = Date.now();
+    let message: StreamMessage;
+    try {
+      message = JSON.parse(raw) as StreamMessage;
+    } catch {
+      return;
+    }
+    const channel = message.channel ?? "";
+    switch (message.event) {
+      case "gemstack.welcome":
+        return this.opened("sse", (message.data as { heartbeat: number }).heartbeat);
+      case "gemstack.ping":
+        return;
+      case "gemstack.presence":
+        return this.presenceState(channel, message.data as PresenceEntry[]);
+      case "presence.join":
+      case "presence.leave": {
+        const entry = message.data as PresenceEntry;
+        return this.presenceChange(channel, message.event === "presence.join" ? "join" : "leave", entry.id, entry.meta);
+      }
+      case DENIED_EVENT:
+        return this.emit(channel, { id: null, channel, event: DENIED_EVENT, data: message.data });
+      case GAP_EVENT: // for every channel on the stream
+        return this.handlers.forEach((_, name) => this.emit(name, { id: null, channel: name, event: GAP_EVENT, data: null }));
+      default:
+        if (!message.id || !message.channel) return;
+        this.lastStreamId = message.id;
+        this.event({ id: message.id, channel: message.channel, event: message.event, data: message.data });
+    }
+  }
+
+  private async post(message: Outgoing) {
+    const ref = message.ref as number;
+    try {
+      const response = await fetch(endpoint(), {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ channel: message.channel, event: message.event, data: message.data }),
+        credentials: crossOrigin() ? "include" : "same-origin",
+      });
+      const body = (await response.json().catch(() => null)) as { data?: unknown; error?: ErrorBody } | null;
+      if (response.ok) this.reply(ref, true, body?.data);
+      else this.reply(ref, false, undefined, body?.error ?? { code: "http_error", message: `HTTP ${response.status}` });
+    } catch (error) {
+      this.reply(ref, false, undefined, { code: "network_error", message: String(error) });
+    }
+  }
+
+  // ── both ─────────────────────────────────────────────────────────────
+
+  private event(message: { id: string; channel: string; event: string; data: unknown }) {
     // A replay can overlap with live delivery right after (re)subscribing.
     const seen = this.seen.get(message.channel) ?? new Set<string>();
     if (seen.has(message.id)) return;
@@ -276,16 +485,22 @@ class RealtimeClient {
     this.emit(message.channel, { id: message.id, channel: message.channel, event: message.event, data: message.data });
   }
 
-  private presenceChange(message: Extract<ServerMessage, { type: "presence" }>) {
-    const entries = this.presence.get(message.channel);
-    if (!entries) return;
-    if (message.event === "join") entries.set(message.id, { id: message.id, meta: message.meta });
-    else entries.delete(message.id);
-    this.presence.set(message.channel, new Map(entries)); // a new Map, so hooks see a change
+  private presenceState(channel: string, entries: PresenceEntry[]) {
+    if (!this.handlers.has(channel)) return;
+    this.presence.set(channel, new Map(entries.map((entry) => [entry.id, entry])));
     this.notify();
   }
 
-  private reply(ref: number, ok: boolean, data: unknown, error?: { code: string; message: string }) {
+  private presenceChange(channel: string, change: "join" | "leave", id: string, meta?: Record<string, unknown>) {
+    const entries = this.presence.get(channel);
+    if (!entries) return;
+    if (change === "join") entries.set(id, { id, meta });
+    else entries.delete(id);
+    this.presence.set(channel, new Map(entries)); // a new Map, so hooks see a change
+    this.notify();
+  }
+
+  private reply(ref: number, ok: boolean, data: unknown, error?: ErrorBody) {
     const pending = this.pending.get(ref);
     if (!pending) return;
     this.pending.delete(ref);
@@ -300,6 +515,7 @@ class RealtimeClient {
   }
 
   private setStatus(status: RealtimeStatus) {
+    if (status !== "open" && !this.socket && !this.stream) this.transport = null;
     if (this.status === status) return;
     this.status = status;
     this.notify();
@@ -313,7 +529,7 @@ class RealtimeClient {
 export const realtime = new RealtimeClient();
 
 if (typeof window !== "undefined") {
-  // Back online: don't wait for the backoff timer.
+  window.addEventListener("offline", () => realtime.wentOffline());
   window.addEventListener("online", () => realtime.reconnectNow());
 }
 
@@ -337,7 +553,7 @@ export function usePresence<M = Record<string, unknown>>(channel: string | null)
   return channel ? (realtime.presenceOf(channel) as PresenceEntry<M>[]) : [];
 }
 
-/** "idle" | "connecting" | "open" | "reconnecting" — e.g. to show an offline banner. */
+/** "idle" | "connecting" | "open" | "reconnecting" | "offline" — e.g. to show an offline banner. */
 export function useRealtimeStatus(): RealtimeStatus {
   return useSyncExternalStore(
     (listener) => realtime.onChange(listener),
