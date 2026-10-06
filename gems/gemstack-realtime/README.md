@@ -2,8 +2,8 @@
 
 GemStack realtime: GemStack.broadcast to browsers over Server-Sent Events.
 
-Part of [GemStack](https://github.com/gemstack-rb/gemstack), a modular Ruby API framework for Next.js
-applications by [Adware Technologies](https://www.adwaretech.com). All GemStack gems are developed together in that repository and released with the same
+Part of [GemStack](https://github.com/gemstack-rb/gemstack), a modular Ruby web application framework with
+a Next.js frontend, by [Adware Technologies](https://www.adwaretech.com). All GemStack gems are developed together in that repository and released with the same
 version.
 
 ## Installation

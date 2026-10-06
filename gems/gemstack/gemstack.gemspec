@@ -6,7 +6,7 @@ version = "0.3.6"
 Gem::Specification.new do |spec|
   spec.name = "gemstack"
   spec.version = version
-  spec.summary = "GemStack: a fast, modular Ruby API framework for Next.js applications"
+  spec.summary = "GemStack: a fast, modular Ruby web application framework with a Next.js frontend"
   spec.description = "Ruby API + Next.js with one origin: routing, controllers, models (SQLite, PostgreSQL, " \
                      "MySQL), background jobs, mail, file storage, a TypeScript contract, generators and a " \
                      "development server. Authentication and realtime are the gemstack-auth and " \

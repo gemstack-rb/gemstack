@@ -2,6 +2,11 @@
 
 All GemStack gems are released together with one version.
 
+## Unreleased
+
+- GemStack now describes itself as "a fast, modular Ruby web application framework with a Next.js frontend"
+  (README, gem READMEs and the gem summary on rubygems.org).
+
 ## 0.3.6
 
 - **`gemstack update` updates the app's templates too.** After moving the gems, it brings the files

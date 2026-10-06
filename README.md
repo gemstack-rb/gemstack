@@ -7,7 +7,7 @@
 
 # GemStack
 
-**A fast, modular Ruby API framework for Next.js applications** — by [Adware Technologies](https://www.adwaretech.com).
+**A fast, modular Ruby web application framework with a Next.js frontend** — by [Adware Technologies](https://www.adwaretech.com).
 
 GemStack lets you start a Ruby + Next.js + TypeScript application and go straight
 to business logic. One command gives you a Ruby API and a Next.js frontend served
