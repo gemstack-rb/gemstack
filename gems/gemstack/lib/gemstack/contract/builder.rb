@@ -138,11 +138,20 @@ module GemStack
             if attr[:type] == :json && !serializer.attributes_list[attr[:name]].type
               @warnings << "#{serializer.name}##{attr[:name]}: type unknown, emitted as unknown"
             end
-            { name: attr[:name].to_s, type: type_ref(attr[:type]), nullable: attr[:nullable], optional: false }
+            type = enum_values(serializer, attr)&.then { |values| { enum: values } } || type_ref(attr[:type])
+            { name: attr[:name].to_s, type: type, nullable: attr[:nullable], optional: false }
           end
           @types[name] = { fields: fields }
         end
         { ref: name }
+      end
+
+      # An inferred string attribute backed by a model enum is a union type.
+      def enum_values(serializer, attr)
+        return nil unless attr[:type] == :string && serializer.attributes_list[attr[:name]]&.type.nil?
+
+        field = serializer.model&.gemstack_fields&.[](attr[:name])
+        field && field.options[:enum]
       end
 
       def schema_ref(schema, fallback_name)
@@ -153,7 +162,10 @@ module GemStack
 
       def schema_fields(schema)
         schema.fields.values.map do |field|
-          type = field.schema ? { object: schema_fields(field.schema) } : { scalar: field.type }
+          type = if field.schema then { object: schema_fields(field.schema) }
+                 elsif field.rules[:enum] then { enum: field.rules[:enum].map(&:to_s) }
+                 else { scalar: field.type }
+                 end
           type = { array: type } if field.array
           { name: field.name.to_s, type: type, nullable: field.nullable, optional: field.ts_optional? }
         end

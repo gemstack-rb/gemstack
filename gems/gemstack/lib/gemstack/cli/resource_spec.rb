@@ -6,18 +6,23 @@ module GemStack
     # resource, parsed once from the command line (ARCHITECTURE §7):
     #
     #   gemstack generate resource Product name:string price:decimal description:text:optional \
-    #                                      sku:string:unique category:references active:boolean
+    #                                      sku:string:unique category:references active:boolean \
+    #                                      status:enum:draft,published,archived
     #
-    # Field syntax: name:type[:modifier...]. Fields are required (NOT NULL)
-    # unless marked :optional. Booleans default to false. Modifiers: optional,
-    # unique, index.
+    # Field syntax: name:type[:modifier...]; enums list their values first
+    # (name:enum:a,b,c[:modifier...]). Fields are required (NOT NULL) unless
+    # marked :optional. Booleans default to false, enums to their first value.
+    # Modifiers: optional, unique, index.
     class ResourceSpec
-      TYPES = %w[string text integer bigint float decimal boolean date datetime uuid json references].freeze
+      TYPES = %w[string text integer bigint float decimal boolean date datetime uuid json references enum].freeze
       MODIFIERS = %w[optional unique index].freeze
       REST_ACTIONS = %w[index show create update destroy].freeze
 
-      Field = Struct.new(:name, :type, :optional, :unique, :index, keyword_init: true) do
-        def required? = !optional && type != "boolean"
+      Field = Struct.new(:name, :type, :optional, :unique, :index, :enum_values, keyword_init: true) do
+        # Booleans and enums are NOT NULL too, but with a default: nothing to require.
+        def required? = !optional && !%w[boolean enum].include?(type)
+        def enum? = type == "enum"
+        def default_value = enum? && !optional ? enum_values.first : nil
         def reference? = type == "references"
         def column = reference? ? "#{name}_id" : name
         def label = Inflector.humanize(name)
@@ -78,12 +83,24 @@ module GemStack
                 "Unknown type #{type.inspect} in #{arg.inspect}; types: #{TYPES.join(", ")}"
         end
 
+        enum_values = parse_enum_values(arg, mods) if type == "enum"
         unknown = mods - MODIFIERS
         raise Thor::Error, "Unknown modifier(s) #{unknown.join(", ")} in #{arg.inspect}" unless unknown.empty?
 
         name = name.delete_suffix("_id") if type == "references"
         Field.new(name: name, type: type, optional: mods.include?("optional"), unique: mods.include?("unique"),
-                  index: mods.include?("index") || type == "references")
+                  index: mods.include?("index") || type == "references", enum_values: enum_values)
+      end
+
+      # status:enum:draft,published → ["draft", "published"] (taken off mods).
+      def parse_enum_values(arg, mods)
+        values = mods.shift.to_s.split(",").map(&:strip)
+        if values.empty? || values.any? { |value| !value.match?(/\A[a-z][a-z0-9_]*\z/) } || values.uniq != values
+          raise Thor::Error, "Give an enum's values in #{arg.inspect}, e.g. status:enum:draft,published " \
+                             "(lowercase letters, digits and _, no duplicates)"
+        end
+
+        values
       end
 
       def lower_camel(term)

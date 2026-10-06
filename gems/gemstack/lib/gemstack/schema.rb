@@ -10,6 +10,7 @@ module GemStack
   #     required :name, :string, max_length: 120
   #     required :price, :decimal, gt: 0
   #     optional :active, :boolean, default: true
+  #     optional :status, :string, enum: %w[draft published]   # "draft" | "published" in TypeScript
   #     optional :tags, [:string]
   #     optional :dimensions do
   #       required :width, :integer
@@ -33,7 +34,7 @@ module GemStack
     end
 
     NO_DEFAULT = Object.new.freeze
-    RULES = %i[gt gte lt lte min_length max_length in format].freeze
+    RULES = %i[gt gte lt lte min_length max_length in enum format].freeze
     STRING_TYPES = %i[string text].freeze
 
     # rule => [passes?(value, arg), message(arg)]
@@ -45,6 +46,7 @@ module GemStack
       min_length: [->(v, a) { v.to_s.length >= a }, ->(a) { "is too short (minimum #{a} characters)" }],
       max_length: [->(v, a) { v.to_s.length <= a }, ->(a) { "is too long (maximum #{a} characters)" }],
       in: [->(v, a) { a.include?(v) }, ->(a) { "must be one of: #{a.to_a.join(", ")}" }],
+      enum: [->(v, a) { a.include?(v) }, ->(a) { "must be one of: #{a.to_a.join(", ")}" }], # + a TS union
       format: [->(v, a) { a.match?(v.to_s) }, ->(_) { "is invalid" }]
     }.freeze
 

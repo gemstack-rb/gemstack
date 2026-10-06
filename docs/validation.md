@@ -36,7 +36,7 @@ end
 ```ruby
 class SignupInput < GemStack::Schema
   required :email, :string, max_length: 255, format: /\A[^@\s]+@[^@\s]+\z/
-  required :plan, :string, in: %w[free pro]
+  required :plan, :string, enum: %w[free pro] # TypeScript: "free" | "pro"
   optional :seats, :integer, gte: 1, default: 1
   optional :tags, [:string]                  # list of scalars
   optional :company do                       # nested object
@@ -55,7 +55,8 @@ GemStack::Schema.from_model(Product, only: %i[name price])
 ```
 
 Types are the shared GemStack types (`:string`, `:decimal`, ... or Ruby
-classes like `Integer`). Rules: `gt gte lt lte min_length max_length in format`.
+classes like `Integer`). Rules: `gt gte lt lte min_length max_length in enum format`
+(`enum:` checks like `in:` and makes the TypeScript type a union of the values).
 
 ### Coercion rules
 
@@ -71,10 +72,16 @@ classes like `Integer`). Rules: `gt gte lt lte min_length max_length in format`.
 
 ```json
 {
-  "error": { "code": "validation_failed", "message": "Validation failed", "request_id": "…" },
+  "error": {
+    "code": "validation_failed",
+    "message": "Validation failed: price must be greater than 0, company.name is required, tags.2 must be a string",
+    "request_id": "…"
+  },
   "errors": { "price": ["must be greater than 0"], "company.name": ["is required"], "tags.2": ["must be a string"] }
 }
 ```
 
-The TypeScript client exposes these as `ApiError.errors`; generated forms show
-them under each field.
+The message lists every error, for logs and for clients that only show the
+message. The TypeScript client throws an `ApiError` with them as
+`error.errors`; generated forms show them under each field, and the message
+above the form when an error belongs to no field there (e.g. `errors.add(:base, …)`).

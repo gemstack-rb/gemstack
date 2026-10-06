@@ -52,7 +52,7 @@ export function <%= class_name %>Form({
   const [formError, setFormError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  const set = (key: keyof Values) => (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const set = (key: keyof Values) => (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const target = event.target;
     const value = target instanceof HTMLInputElement && target.type === "checkbox" ? target.checked : target.value;
     // Checkboxes give booleans, other inputs strings — matching each field's type in Values.
@@ -69,7 +69,9 @@ export function <%= class_name %>Form({
     } catch (error) {
       if (error instanceof ApiError) {
         setErrors(error.errors);
-        setFormError(Object.keys(error.errors).length ? null : error.message);
+        // The message lists every error: show it when some aren't next to a field below.
+        const fields = Object.keys(error.errors);
+        setFormError(fields.length && fields.every((field) => field in values) ? null : error.message);
       } else {
         setFormError("Something went wrong. Please try again.");
       }

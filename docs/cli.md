@@ -234,7 +234,9 @@ gemstack g deploy                      # Kamal: Dockerfile, config/deploy.yml, .
 ### Field syntax
 
 `name:type[:optional][:unique][:index]` — fields are required unless marked
-`optional`.
+`optional`. Enums list their values after the type:
+`status:enum:draft,published,archived[:optional]` (default: the first value;
+`optional` allows none).
 
 | Type | Database | TypeScript |
 | --- | --- | --- |
@@ -247,6 +249,7 @@ gemstack g deploy                      # Kamal: Dockerfile, config/deploy.yml, .
 | `uuid` | uuid | `string` |
 | `json` | json/jsonb | `unknown` |
 | `references` | a foreign key `<name>_id` | `number` |
+| `enum:a,b,c` | varchar(50) (the value) | `"a" \| "b" \| "c"` |
 
 ### Next.js pages
 

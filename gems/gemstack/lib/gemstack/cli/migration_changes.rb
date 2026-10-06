@@ -133,8 +133,9 @@ module GemStack
       end
 
       def field_argument(field)
-        [field.name, field.type, ("optional" if field.optional), ("unique" if field.unique),
-         ("index" if field.index && !field.reference?)].compact.join(":")
+        modifiers = { "optional" => field.optional, "unique" => field.unique,
+                      "index" => field.index && !field.reference? }.select { |_, on| on }.keys
+        [field.name, field.type, field.enum_values&.join(","), *modifiers].compact.join(":")
       end
 
       def manual_review
