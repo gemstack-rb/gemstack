@@ -25,8 +25,11 @@ class SSEClient
     @headers = lines[1..].to_h { |line| line.split(": ", 2).then { |k, v| [k.downcase, v] } }
   end
 
-  # The next event (a Hash of SSE fields; "data" parsed as JSON), skipping comments.
-  def next_event(timeout = 3)
+  SKIPPED = %w[gemstack.welcome gemstack.ping].freeze
+
+  # The next event (a Hash of SSE fields; "data" parsed as JSON), skipping
+  # comments and the transport's own welcome/ping events (pass skip: [] to see them).
+  def next_event(timeout = 3, skip: SKIPPED)
     Timeout.timeout(timeout) do
       loop do
         block = read_until("\n\n")
@@ -34,6 +37,8 @@ class SSEClient
         next if fields.empty? || fields.keys == ["retry"]
 
         fields["data"] = JSON.parse(fields["data"]) if fields["data"]
+        next if skip.include?(fields.dig("data", "event"))
+
         return fields
       end
     end

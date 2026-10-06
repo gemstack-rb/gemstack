@@ -20,9 +20,11 @@ module GemStack
       # Keeps each announcement under the PostgreSQL broker's payload limit.
       BATCH = 50
 
-      def initialize(interval: Realtime.config.presence_interval)
+      def initialize(interval: Realtime.config.presence_interval, grace: Realtime.config.presence_grace)
         @interval = interval
         @ttl = interval * 3
+        @grace = grace
+        @later = Queue.new
         @mutex = Mutex.new
         @local = {}   # [channel, key] => { count:, meta: }
         @state = {}   # channel => { key => { meta:, nodes: { node => expires_at } } }
@@ -57,6 +59,14 @@ module GemStack
         announce("leave", [[channel, key, nil]]) if last
       end
 
+      # A dropped connection leaves only after `presence_grace` seconds, so a
+      # reconnect (or an SSE stream reopened with other channels) doesn't
+      # flicker the user out and back in. Runs off the event loop.
+      def untrack_later(channel, key)
+        @later << [monotonic + @grace, channel, key]
+        @mutex.synchronize { @leaver = Thread.new { leave_loop } unless @leaver&.alive? }
+      end
+
       # [{ "id" => key, "meta" => {...} }, ...] for a channel, across processes.
       def list(channel)
         @mutex.synchronize do
@@ -87,8 +97,8 @@ module GemStack
       end
 
       def stop
-        @timer&.kill
-        @timer = nil
+        [@timer, @leaver].each { |thread| thread&.kill }
+        @timer = @leaver = nil
       end
 
       private
@@ -145,6 +155,18 @@ module GemStack
         @mutex.synchronize do
           @timer = Thread.new { timer_loop } unless @timer&.alive?
         end
+      end
+
+      # Same delay for everyone, so the queue is in due order.
+      def leave_loop
+        while (due, channel, key = @later.pop)
+          wait = due - monotonic
+          sleep(wait) if wait.positive?
+          untrack(channel, key)
+        end
+      rescue StandardError => e
+        GemStack.logger.warn("realtime: presence leave failed", error: e)
+        retry
       end
 
       def timer_loop

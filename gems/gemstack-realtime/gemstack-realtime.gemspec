@@ -6,7 +6,7 @@ version = "0.3.6"
 Gem::Specification.new do |spec|
   spec.name = "gemstack-realtime"
   spec.version = version
-  spec.summary = "GemStack realtime over WebSockets: broadcasts, channels, presence and browser messages"
+  spec.summary = "GemStack realtime (WebSockets or Server-Sent Events): broadcasts, channels, presence, messages"
   spec.authors = ["Adware Technologies", "Shoaib Malik"]
   spec.email = ["gemstack26@gmail.com"]
   spec.license = "MIT"

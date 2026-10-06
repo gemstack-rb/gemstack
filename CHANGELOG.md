@@ -11,8 +11,13 @@ All GemStack gems are released together with one version.
   `GemStack::Realtime.present_on`), connection identity (`identify`) and replay after reconnects. The
   browser client reconnects with backoff, resubscribes and de-duplicates; Origins are checked and
   messages are size- and rate-limited. `GemStack.broadcast`, channel rules and brokers are unchanged.
-  The Server-Sent Events stream still answers for apps on the old `realtime.ts` (deprecated) — replace
-  that file with the new client (docs/realtime.md).
+- **Server-Sent Events are a full second transport** with the same features (`receive` via POST,
+  presence, identity, replay). `config.realtime.transports` (default `[:websocket, :sse]`) says what the
+  server accepts; `NEXT_PUBLIC_GEMSTACK_REALTIME` (`auto` — the default: WebSocket, falling back to SSE when
+  one can't be opened — `websocket` or `sse`) what the browser uses. App code is the same either way.
+  `useRealtimeStatus()` adds `offline` (the browser lost its network), `realtime.transport` says which one
+  is in use, and presence survives a reconnect within `config.realtime.presence_grace` (3 s). Apps on the
+  old `realtime.ts` keep working; copy the new client to get the rest (docs/realtime.md).
 - `GemStack::Auth.user_from(request)`: the signed-in user outside controllers (session cookie or API
   token), e.g. for realtime's `identify`.
 - Background jobs work from `gemstack new`: apps with a database get the jobs table, `gemstack new`

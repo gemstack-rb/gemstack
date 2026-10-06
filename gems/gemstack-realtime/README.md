@@ -1,6 +1,6 @@
 # gemstack-realtime
 
-GemStack realtime over WebSockets: broadcasts, channels, presence and browser messages.
+GemStack realtime (WebSockets or Server-Sent Events): broadcasts, channels, presence, browser messages.
 
 Part of [GemStack](https://github.com/gemstack-rb/gemstack), a modular Ruby web application framework with
 a Next.js frontend, by [Adware Technologies](https://www.adwaretech.com). All GemStack gems are developed together in that repository and released with the same
