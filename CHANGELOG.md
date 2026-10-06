@@ -2,6 +2,15 @@
 
 All GemStack gems are released together with one version.
 
+## Unreleased
+
+- Next.js's standalone server reads the root `.env` too: the loader moved to
+  `frontend/lib/gemstack/root-env.cjs`, which `next.config.ts` requires and the standalone server preloads
+  (`npm run start:standalone`, i.e. `node -r ./lib/gemstack/root-env.cjs .next/standalone/server.js`; the
+  Docker image's web command does the same). Before, server-side code under `node server.js` only saw real
+  environment variables. Existing apps: `gemstack update` adds the file and updates `next.config.ts` and
+  `package.json`; re-run `gemstack generate deploy` for the image.
+
 ## 0.4.1
 
 - **One `.env` for the API and the frontend**: the root one. `frontend/next.config.ts` loads the root

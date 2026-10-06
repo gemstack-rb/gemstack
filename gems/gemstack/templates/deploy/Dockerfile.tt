@@ -3,7 +3,7 @@
 #
 # One image runs every process; config/deploy.yml (Kamal) gives each role its command:
 <% if frontend? -%>
-#   web   node frontend/server.js              Next.js
+#   web   node -r … frontend/server.js         Next.js (standalone server)
 <% end -%>
 #   api   bundle exec puma -C config/puma.rb   Ruby API (bin/docker-entrypoint migrates first)
 <% if jobs? -%>
@@ -61,6 +61,7 @@ COPY --from=gems --chown=app:app /app /app
 <% if frontend? -%>
 COPY --from=frontend /usr/local/bin/node /usr/local/bin/node
 COPY --from=frontend --chown=app:app /frontend/.next/standalone /app/frontend
+COPY --from=frontend --chown=app:app /frontend/lib/gemstack/root-env.cjs /app/frontend/lib/gemstack/root-env.cjs
 <% end -%>
 ENV GEMSTACK_API_HOST=0.0.0.0 GEMSTACK_API_PORT=4000<% if frontend? %> NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000<% end %>
 USER app

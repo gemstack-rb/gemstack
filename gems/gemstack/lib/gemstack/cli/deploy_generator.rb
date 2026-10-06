@@ -13,7 +13,7 @@ module GemStack
       end
 
       KAMAL_GEM = %(gem "kamal", require: false, group: :development # bundle exec kamal deploy (config/deploy.yml)\n)
-      # The image runs Next.js's standalone server (node frontend/server.js); the
+      # The image runs Next.js's standalone server (node -r … frontend/server.js); the
       # Dockerfile asks for that build with GEMSTACK_NEXT_OUTPUT=standalone.
       STANDALONE = %(  output: process.env.GEMSTACK_NEXT_OUTPUT === "standalone" ? "standalone" : undefined,\n)
 
