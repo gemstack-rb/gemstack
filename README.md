@@ -118,7 +118,7 @@ server database. **Use PostgreSQL in production** — set `DATABASE_URL` ([datab
 
 ```bash
 gem install gemstack
-gemstack new shop                  # Gemfile: gem "gemstack", "~> 0.4.1"
+gemstack new shop                  # Gemfile: gem "gemstack", "~> 0.4.2"
 ```
 
 One gem is the framework: routing, controllers, models, background jobs, mail,

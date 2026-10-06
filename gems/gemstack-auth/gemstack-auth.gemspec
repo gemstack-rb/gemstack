@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # All GemStack gems share one version; change it with `rake version:set[x.y.z]`.
-version = "0.4.1"
+version = "0.4.2"
 
 Gem::Specification.new do |spec|
   spec.name = "gemstack-auth"

@@ -2,6 +2,13 @@
 
 All GemStack gems are released together with one version.
 
+## 0.4.2
+
+- `gemstack update`: files you edited that the release also changed can be **merged** — `[m]erge` keeps
+  your edits and applies the release's template changes on top (three-way, `git merge-file`), with conflict
+  markers only where both changed the same lines. Before, the choices were overwrite (losing your edits),
+  skip, diff or save as `FILE.new`.
+
 ## 0.4.1
 
 - **One `.env` for the API and the frontend**: the root one. `frontend/lib/gemstack/root-env.cjs` loads the
@@ -16,10 +23,6 @@ All GemStack gems are released together with one version.
   `GEMSTACK_PUBLIC_ENV`), never stored in the image, and its web command preloads the loader too. Existing
   apps: `gemstack update` adds the loader and updates `next.config.ts` and `package.json`; re-run
   `gemstack generate deploy` for the Docker/Kamal part.
-- `gemstack update`: files you edited that the release also changed can be **merged** — `[m]erge` keeps
-  your edits and applies the release's template changes on top (three-way, `git merge-file`), with conflict
-  markers only where both changed the same lines. Before, the choices were overwrite (losing your edits),
-  skip, diff or save as `FILE.new`.
 
 ## 0.4.0
 
