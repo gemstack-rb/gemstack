@@ -14,7 +14,7 @@ module GemStack
       @app = app
       @application = application
       @watcher = Dev::FileWatcher.new(WATCHED, root: application.root)
-      @interlock = Interlock.new
+      @interlock = application.interlock
       @check = Mutex.new
     end
 

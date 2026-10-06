@@ -38,6 +38,8 @@ class HubTest < Minitest::Test
 
   FakeConnection = Struct.new(:channels, :received) do
     def push(bytes) = received << bytes
+    # Like the SSE connection.
+    def deliver(message) = push(message.sse)
   end
 
   def setup = @hub = GemStack::Realtime::Hub.new(replay_size: 3, replay_ttl: 60)

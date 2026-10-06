@@ -21,7 +21,7 @@ module GemStack
         end
       end
 
-      def broadcasts = Realtime.broker.messages
+      def broadcasts = Realtime.broker.messages.reject { |m| m.channel == Presence::CHANNEL }
 
       # A broadcast on channel (optionally with this event name / data) happened.
       def assert_broadcast(channel, event = nil, data: nil)

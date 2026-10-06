@@ -4,11 +4,11 @@ require "nio"
 
 module GemStack
   module Realtime
-    # A single event-loop thread (nio4r) that owns every open stream in the
-    # process: it notices disconnects (readable + EOF), flushes buffered
-    # writes when sockets become writable, and sends heartbeats. Request
-    # threads only hand connections over, so 10,000 open streams cost no
-    # server threads.
+    # A single event-loop thread (nio4r) that owns every open connection in
+    # the process: it reads what clients send (WebSocket frames; for SSE only
+    # the EOF of a disconnect), flushes buffered writes when sockets become
+    # writable, and sends each transport's heartbeat. Request threads only
+    # hand connections over, so 10,000 open connections cost no server threads.
     class Streamer
       def initialize(heartbeat: Realtime.config.heartbeat, hub: Realtime.hub)
         @heartbeat = heartbeat
@@ -64,7 +64,7 @@ module GemStack
           drain_commands
           next if monotonic < next_beat
 
-          @monitors.each_key { |connection| connection.push(": ping\n\n") }
+          @monitors.each_key(&:heartbeat)
           next_beat = monotonic + @heartbeat
         end
       rescue StandardError => e
@@ -97,14 +97,17 @@ module GemStack
         monitor = @monitors.delete(connection) or return
         monitor.close
         @hub.remove(connection)
+        connection.disconnected if connection.respond_to?(:disconnected)
       end
 
       def ready(monitor)
         connection = monitor.value
         if monitor.readable?
-          # SSE clients never send data after the request; readable means EOF.
-          data = connection.io.read_nonblock(1024, exception: false)
-          return connection.close if data.nil?
+          data = connection.io.read_nonblock(16 * 1024, exception: false)
+          return connection.close if data.nil? # EOF: the client went away
+
+          # WebSocket frames; SSE clients send nothing after the request.
+          connection.receive(data) if data.is_a?(String) && connection.respond_to?(:receive)
         end
         return unless monitor.writable?
 

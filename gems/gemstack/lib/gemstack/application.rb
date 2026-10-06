@@ -99,6 +99,10 @@ module GemStack
       (app_dirs + extra).select { |path| File.directory?(path) }
     end
 
+    # Held shared while application code runs (requests, realtime handlers),
+    # exclusively while code reloads.
+    def interlock = @interlock ||= Interlock.new
+
     private
 
     def load_env_files = GemStack.load_env_files!

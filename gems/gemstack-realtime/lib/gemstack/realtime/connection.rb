@@ -2,7 +2,8 @@
 
 module GemStack
   module Realtime
-    # One browser's event stream on a hijacked socket. #push never blocks:
+    # One browser connection on a hijacked socket — the Server-Sent Events
+    # stream (legacy transport); WebSocket::Connection builds on it. #push never blocks:
     # bytes the socket can't take yet are buffered and flushed by the
     # Streamer when it becomes writable. A client more than max_buffer bytes
     # behind is disconnected (it reconnects and replays or refetches).
@@ -11,7 +12,7 @@ module GemStack
 
       def initialize(io, channels, streamer:, max_buffer: Realtime.config.max_buffer)
         @io = io
-        @channels = channels.freeze
+        @channels = Set.new(channels)
         @streamer = streamer
         @max_buffer = max_buffer
         @buffer = String.new(encoding: Encoding::BINARY)
@@ -21,6 +22,10 @@ module GemStack
 
       def closed? = @closed
       def pending? = @mutex.synchronize { !@buffer.empty? }
+
+      # Transport hooks: how a broadcast and a keep-alive are written.
+      def deliver(message) = push(message.sse)
+      def heartbeat = push(": ping\n\n")
 
       def push(bytes)
         wants_write = @mutex.synchronize do
@@ -38,8 +43,26 @@ module GemStack
         true
       end
 
-      # Writes as much as the socket accepts. Returns true when fully flushed.
-      def flush = @mutex.synchronize { @closed || flush_locked }
+      # Writes as much as the socket accepts. Returns true when fully flushed
+      # (and closes the socket if #close_after_flush asked for it).
+      def flush
+        @mutex.synchronize do
+          return true if @closed
+
+          flushed = flush_locked
+          close_locked if flushed && @close_after_flush
+          flushed
+        end
+      end
+
+      # Sends what's buffered, then closes (e.g. after a WebSocket close frame).
+      def close_after_flush
+        done = @mutex.synchronize do
+          @close_after_flush = true
+          flush_locked.tap { |flushed| close_locked if flushed }
+        end
+        @streamer.want_write(self) unless done
+      end
 
       def close
         @mutex.synchronize { close_locked }

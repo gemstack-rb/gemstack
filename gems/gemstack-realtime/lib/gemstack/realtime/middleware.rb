@@ -1,10 +1,21 @@
 # frozen_string_literal: true
 
+require "uri"
+
 module GemStack
   module Realtime
-    # GET <api_path>/realtime?channels=a,b[&last_event_id=...]
+    # GET <api_path>/realtime with `Upgrade: websocket` — the realtime endpoint.
     #
-    # Validates and authorizes the channels (400 as a JSON error; 403 only when
+    # Checks the handshake and the Origin (only the API's own origin, plus
+    # config.http.cors.origins or realtime.allowed_origins), identifies the
+    # connection with config/channels.rb's `identify` while the request's
+    # cookies are at hand, then takes the socket over (Rack full hijack, as
+    # Puma supports), answers 101 and hands it to the Streamer. Subscriptions
+    # and messages then travel over the WebSocket (WebSocket::Connection).
+    #
+    # Deprecated: GET <api_path>/realtime?channels=a,b[&last_event_id=...]
+    # without an Upgrade is the Server-Sent Events stream older realtime.ts
+    # clients use. Validates and authorizes the channels (400 as a JSON error; 403 only when
     # none is allowed — refused channels otherwise get a gemstack.denied event), then
     # takes the socket over from the server (Rack full hijack, supported by
     # Puma) and hands it to the Streamer, freeing the request thread. The
@@ -24,7 +35,9 @@ module GemStack
 
       def call(env)
         return @app.call(env) unless env[Rack::PATH_INFO] == path && env[Rack::REQUEST_METHOD] == "GET"
+        return websocket(env) if env["HTTP_UPGRADE"].to_s.casecmp?("websocket")
 
+        deprecated_sse
         request = Rack::Request.new(env)
         requested = requested_channels(request)
         channels, denied = requested.partition { |channel| Realtime.channels.authorized?(channel, request) }
@@ -42,6 +55,61 @@ module GemStack
       private
 
       def path = @path ||= Realtime.config.path
+
+      def websocket(env)
+        key = env["HTTP_SEC_WEBSOCKET_KEY"]
+        unless env["HTTP_CONNECTION"].to_s.downcase.include?("upgrade") && WebSocket::Codec.valid_key?(key)
+          raise BadRequest.new("Invalid WebSocket handshake", code: "invalid_handshake")
+        end
+        unless env["HTTP_SEC_WEBSOCKET_VERSION"] == "13"
+          return [426, { "sec-websocket-version" => "13", "content-type" => "text/plain" }, ["WebSocket version 13"]]
+        end
+
+        request = Rack::Request.new(env)
+        raise Forbidden.new("Cross-origin WebSocket refused", code: "origin_forbidden") unless allowed_origin?(request)
+        unless env["rack.hijack?"]
+          raise ServiceUnavailable.new("WebSockets need a server with Rack hijacking, such as Puma",
+                                       code: "websocket_unsupported")
+        end
+
+        open_websocket(env, request, key)
+      end
+
+      def open_websocket(env, request, key)
+        identity = Realtime.channels.identify_request(request)
+        Realtime.listen!
+        io = env["rack.hijack"].call
+        io.write(WebSocket::Codec.handshake_response(key))
+        streamer = Streamer.instance
+        connection = WebSocket::Connection.new(io, request: request, identity: identity, streamer: streamer)
+        connection.welcome
+        streamer.add(connection)
+        [200, {}, []] # ignored by the server after a full hijack
+      end
+
+      # Browsers always send Origin with a WebSocket; other clients (servers,
+      # mobile apps) may not, and aren't subject to cross-site hijacking.
+      def allowed_origin?(request)
+        origin = request.get_header("HTTP_ORIGIN")
+        return true if origin.nil? || origin.empty?
+
+        allowed = Realtime.config.allowed_origins
+        return allowed.include?(origin) if allowed
+        return true if GemStack.config.http.cors.origins.include?(origin)
+
+        uri = URI.parse(origin)
+        uri.host.to_s.casecmp?(request.host) && uri.port == request.port
+      rescue URI::InvalidURIError
+        false
+      end
+
+      def deprecated_sse
+        return if @sse_warned
+
+        @sse_warned = true
+        GemStack.logger.warn("realtime: a client used the deprecated Server-Sent Events transport; update " \
+                             "frontend/lib/gemstack/realtime.ts to the WebSocket client (docs/realtime.md)")
+      end
 
       def requested_channels(request)
         channels = request.GET["channels"].to_s.split(",").map(&:strip).reject(&:empty?).uniq
@@ -107,6 +175,7 @@ module GemStack
         end
 
         def push(bytes) = @queue << bytes
+        def deliver(message) = push(message.sse)
         def closed? = @queue.closed?
 
         def each

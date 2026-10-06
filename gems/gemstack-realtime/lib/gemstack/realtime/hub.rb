@@ -2,8 +2,10 @@
 
 module GemStack
   module Realtime
-    # This process's subscriptions and replay history. The broker's listener
-    # calls #deliver; connections are only ever written to without blocking.
+    # This process's subscriptions and replay history, whatever the transport.
+    # The broker's listener calls #deliver; each connection encodes the message
+    # for its transport (a WebSocket frame, or an SSE event) and is only ever
+    # written to without blocking.
     class Hub
       Entry = Struct.new(:message, :at)
 
@@ -19,6 +21,23 @@ module GemStack
       def add(connection)
         @mutex.synchronize { connection.channels.each { |channel| @subscriptions[channel] << connection } }
         connection
+      end
+
+      # WebSocket connections subscribe and unsubscribe while open.
+      def subscribe(connection, channel)
+        @mutex.synchronize do
+          connection.channels << channel
+          @subscriptions[channel] << connection
+        end
+      end
+
+      def unsubscribe(connection, channel)
+        @mutex.synchronize do
+          connection.channels.delete(channel)
+          subscribers = @subscriptions[channel]
+          subscribers.delete(connection)
+          @subscriptions.delete(channel) if subscribers.empty?
+        end
       end
 
       def remove(connection)
@@ -38,14 +57,23 @@ module GemStack
       end
 
       def deliver(message)
+        return Realtime.presence.receive(message) if message.channel == Presence::CHANNEL
+
         subscribers = @mutex.synchronize do
           @history << Entry.new(message, monotonic)
           @history.shift while @history.size > @replay_size
           @subscriptions.key?(message.channel) ? @subscriptions[message.channel].to_a : []
         end
-        payload = message.sse
-        subscribers.each { |connection| connection.push(payload) }
+        subscribers.each { |connection| connection.deliver(message) }
         subscribers.size
+      end
+
+      # To this process's subscribers only, without replay history (presence changes).
+      def deliver_local(message)
+        subscribers = @mutex.synchronize do
+          @subscriptions.key?(message.channel) ? @subscriptions[message.channel].to_a : []
+        end
+        subscribers.each { |connection| connection.deliver(message) }
       end
 
       # Events on `channels` published after the event with id `last_id`.

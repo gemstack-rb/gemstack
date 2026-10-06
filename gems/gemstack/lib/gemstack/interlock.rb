@@ -28,6 +28,14 @@ module GemStack
       end
     end
 
+    # Runs application code outside a request (e.g. realtime handlers).
+    def shared
+      acquire_shared
+      yield
+    ensure
+      release_shared
+    end
+
     def exclusive
       @mutex.synchronize do
         @waiting_writers += 1
