@@ -219,7 +219,8 @@ module GemStack
                   "set DATABASE_URL, or a production section in config/database.yml")
         elsif settings[:adapter] == "sqlite"
           caution("SQLite in production (#{settings[:database]})",
-                  "keep the file on a persistent volume and run a single server; back it up")
+                  "PostgreSQL is recommended: add gem \"pg\" and set DATABASE_URL=postgres://… — SQLite only " \
+                  "suits one server, with the file on a persistent volume and backups")
         else
           pass("production database: #{GemStack::DB::Configuration.describe(settings)} (#{settings[:source]})")
         end

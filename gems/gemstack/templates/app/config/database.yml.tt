@@ -15,7 +15,10 @@ test:
   <<: *default
   database: db/test.sqlite3
 
-# Keep the file on persistent storage (a volume); or set DATABASE_URL=sqlite3:/data/app.sqlite3.
+# Production: use PostgreSQL. Add gem "pg" and set
+#   DATABASE_URL=postgres://user:password@host:5432/<%= database_name %>_production
+# which overrides this section (hosting platforms set it for you). SQLite below
+# suits a single server only: keep the file on a persistent volume and back it up.
 production:
   <<: *default
   database: db/production.sqlite3

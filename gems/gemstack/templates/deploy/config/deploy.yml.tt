@@ -103,6 +103,8 @@ env:
 <% if sqlite? -%>
 
 # The SQLite file lives on this volume, shared by every role: keep them on one server.
+# For production, PostgreSQL is recommended (docs/database.md): switch the app to it
+# and `gemstack generate deploy --force` adds the database accessory.
 volumes:
   - "<%= service %>_data:/data"
 <% end -%>
