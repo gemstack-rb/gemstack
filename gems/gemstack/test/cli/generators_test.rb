@@ -36,7 +36,7 @@ class AppGeneratorTest < Minitest::Test
       db/migrations/TIMESTAMP_create_gemstack_jobs.rb db/seeds.rb
       frontend/app/globals.css frontend/app/layout.tsx frontend/app/page.module.css frontend/app/page.tsx
       frontend/app/providers.tsx
-      frontend/lib/gemstack/client.ts frontend/next-env.d.ts frontend/next.config.ts frontend/package.json
+      frontend/lib/gemstack/client.ts frontend/lib/gemstack/root-env.cjs frontend/next-env.d.ts frontend/next.config.ts frontend/package.json
       frontend/tsconfig.json test/health_test.rb test/test_helper.rb
     ]
 

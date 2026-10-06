@@ -338,6 +338,8 @@ TSX
 (cd frontend && GEMSTACK_API_URL="http://127.0.0.1:$PORT_RT" npx next build > "$WORK/build.log" 2>&1) ||
   { tail -40 "$WORK/build.log"; exit 1; }
 grep -rqF "from the root .env" frontend/.next/static || { echo "NEXT_PUBLIC_E2E_ROOT_ENV from the root .env isn't in the build"; exit 1; }
+(cd frontend && node -r ./lib/gemstack/root-env.cjs -e 'process.exit(process.env.NEXT_PUBLIC_E2E_ROOT_ENV === "from the root .env" ? 0 : 1)') ||
+  { echo "the standalone preload (lib/gemstack/root-env.cjs) doesn't load the root .env"; exit 1; }
 
 step "realtime client through Next.js (next start, /api rewritten to the API)"
 start_api

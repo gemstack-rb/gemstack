@@ -528,7 +528,7 @@ class DeployGeneratorTest < Minitest::Test
     assert_equal "web", config["primary_role"]
     assert_equal({ "ssl" => true, "host" => "app.example.com", "app_port" => 3000, "healthcheck" => { "path" => "/" } },
                  config["proxy"])
-    assert_equal "node frontend/server.js", config.dig("servers", "web", "cmd")
+    assert_equal "node -r ./frontend/lib/gemstack/root-env.cjs frontend/server.js", config.dig("servers", "web", "cmd")
     assert_equal "http://my-shop-api:4000", config.dig("servers", "web", "env", "clear", "GEMSTACK_API_URL")
     api = config.dig("servers", "api")
 

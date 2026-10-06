@@ -85,9 +85,10 @@ app needs it.
 ## Environment variables
 
 One `.env` for the whole app: the **root** one (next to `Gemfile`). The Ruby API
-loads it, and `next.config.ts` loads the same files for Next.js — under
-`gemstack dev`, `next build` and `next start` alike — so there is no
-`frontend/.env` to keep in sync. Order: `.env.<env>.local`, `.env.local`,
+loads it, and `frontend/lib/gemstack/root-env.cjs` loads the same files for
+Next.js — required by `next.config.ts` (`gemstack dev`, `next build`,
+`next start`) and preloaded by the standalone server (`npm run start:standalone`)
+— so there is no `frontend/.env` to keep in sync. Order: `.env.<env>.local`, `.env.local`,
 `.env.<env>`, `.env` (earlier files win); real environment variables always win.
 
 `NEXT_PUBLIC_*` values are compiled into the browser's JavaScript by `next build`:

@@ -38,9 +38,12 @@ platform's settings override the files.
 - `NEXT_PUBLIC_*` values are compiled into the JavaScript at **build** time: have
   them in the root `.env` (or the environment) where `npm run build` runs, and
   rebuild after changing one.
-- Next.js's standalone server (`node frontend/server.js`, used by the Docker
-  image) doesn't run `next.config.ts`: its server-side variables come from the
-  environment, as in the Kamal setup below.
+- Next.js's standalone server doesn't run `next.config.ts`, so it's started with
+  the same loader as a preload: `npm run start:standalone` in `frontend/`
+  (`node -r ./lib/gemstack/root-env.cjs .next/standalone/server.js`, after copying
+  `public/` and `.next/static/` into `.next/standalone/` as Next.js requires). The
+  Docker image starts it the same way. Without the preload, server-side code would
+  only see real environment variables.
 - With Kamal, the image contains no `.env`: runtime settings come from
   `config/deploy.yml` (`env:`) and `.kamal/secrets`. For the frontend build,
   `.kamal/secrets` passes the `NEXT_PUBLIC_*` lines of the root `.env.production`
@@ -138,7 +141,7 @@ Kamal works with any provider that gives you a Linux server with SSH: Hetzner, D
 AWS EC2, Google Compute Engine, Linode, or your own hardware. You always run `kamal` from your machine
 (or CI), never on the server. Presets for platforms that run containers for you (Heroku, Fly.io,
 Render, Railway) are planned; until then the image runs any role through its command
-(`node frontend/server.js`, `bundle exec puma -C config/puma.rb`, `bundle exec gemstack jobs`) and
+(`node -r ./frontend/lib/gemstack/root-env.cjs frontend/server.js`, `bundle exec puma -C config/puma.rb`, `bundle exec gemstack jobs`) and
 the options below cover how `/api` reaches Ruby there.
 
 ## Choose how `/api` reaches Ruby

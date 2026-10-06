@@ -16,7 +16,7 @@ servers:
   web:
     hosts:
       - 192.168.0.1 # CHANGE: your server's IP or hostname
-    cmd: node frontend/server.js
+    cmd: node -r ./frontend/lib/gemstack/root-env.cjs frontend/server.js
     env:
       clear:
         # Server Components call the API directly, through the alias below.
