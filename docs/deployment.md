@@ -227,6 +227,12 @@ git commit -am "…"
 bin/deploy
 ```
 
+### Later GemStack releases
+
+`gemstack update` also updates the deploy files, keeping your edits: unedited files are updated, and
+for edited ones (like `config/deploy.yml`, with your server and domain) you can merge the release's
+changes into yours ([updating](cli.md#upgrading-gemstack)). Review the result and deploy.
+
 ## Everyday commands
 
 `bin/deploy` passes anything after it to Kamal, with your `.env.production` / `.env` loaded:

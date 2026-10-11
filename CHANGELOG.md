@@ -9,6 +9,11 @@ All GemStack gems are released together with one version.
   else — Kamal doesn't read `.env` itself. Without arguments it deploys, refusing while there are
   uncommitted changes (Kamal builds the last commit); other Kamal commands pass through
   (`bin/deploy setup`, `bin/deploy logs`). `gemstack generate deploy` writes `bin/deploy`.
+- **`gemstack update` updates the deploy files too** (`Dockerfile`, `config/deploy.yml`, `.kamal/secrets`,
+  `bin/deploy`…), the same way as the app's templates: unedited files are updated, edited ones can be
+  merged — starting from the exact template each was generated from, which `.gemstack/generators.json`
+  records — and files a release adds (`bin/deploy`) are created. Before, deploy files never got a
+  release's fixes after `gemstack generate deploy`.
 - `gemstack generate deploy`: the api role is the primary role, so it boots before the web role, whose
   health check renders pages that call the API (the first deploy could fail before); the web role enables
   kamal-proxy explicitly. `config/deploy.yml` shows how to serve `www` and the bare domain and to set the

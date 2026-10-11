@@ -56,6 +56,14 @@ module GemStack
         @dirty = true
       end
 
+      # Records a file as generated from `content` — what a later update
+      # compares with — whatever the file holds now (e.g. after a merge).
+      def record_content(relative, owner:, content:)
+        absolute(relative)
+        files[relative] = { "owner" => owner, "sha256" => Digest::SHA256.hexdigest(content) }
+        @dirty = true
+      end
+
       def record_route(line, owner:)
         entry = { "owner" => owner, "line" => line }
         return if routes.include?(entry)

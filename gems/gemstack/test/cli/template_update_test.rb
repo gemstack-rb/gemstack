@@ -210,3 +210,95 @@ class UpdateRunsTheTemplateStepTest < Minitest::Test
     end
   end
 end
+
+# The files `gemstack generate deploy` wrote are updated like the app's
+# templates; the old release is a copy of today's deploy templates with an
+# older Dockerfile comment, the primary_role it used to have, and no bin/deploy.
+class DeployTemplateUpdateTest < Minitest::Test
+  def setup
+    @tmp = Dir.mktmpdir("gemstack-deploy-update")
+    @old = File.join(@tmp, "old-templates")
+    FileUtils.cp_r(GemStack::CLI::Generator::TEMPLATES, @old)
+    edit(@old, "deploy/Dockerfile.tt") { |text| text.sub("# Production image for", "# Old image for") }
+    edit(@old, "deploy/config/deploy.yml.tt") { |text| text.sub("primary_role: api", "primary_role: web") }
+    FileUtils.rm(File.join(@old, "deploy/bin/deploy"))
+    @root = File.join(@tmp, "shop")
+    GemStack::CLI::AppGenerator.new(@root, { skip_install: true, skip_git: true, templates: @old },
+                                    output: StringIO.new).run
+    @out = StringIO.new
+  end
+
+  def teardown = FileUtils.rm_rf(@tmp)
+
+  def edit(root, rel)
+    path = File.join(root, rel)
+    File.write(path, yield(File.read(path)))
+  end
+
+  def read(path) = File.read(File.join(@root, path))
+  def manifest = JSON.parse(read(".gemstack/generators.json"))["files"]
+
+  def generate_old_deploy
+    GemStack::CLI::DeployGenerator.new(root: @root, output: StringIO.new, templates: @old).run
+  end
+
+  def update(answers: nil)
+    prompt = answers && ->(_question) { answers.shift }
+    GemStack::CLI::TemplateUpdate.new(root: @root, from: "0.3.5", output: @out, interactive: !answers.nil?,
+                                      prompt: prompt, old_templates: @old).run
+  end
+
+  def test_unedited_deploy_files_are_updated_and_new_ones_created
+    generate_old_deploy
+    result = update
+
+    assert_includes result.updated, "Dockerfile"
+    assert_includes read("Dockerfile"), "# Production image for"
+    assert_includes result.created, "bin/deploy"
+    assert File.executable?(File.join(@root, "bin/deploy"))
+    assert_equal "deploy:app", manifest.dig("bin/deploy", "owner"), "so destroy deploy removes it"
+    assert_equal Digest::SHA256.hexdigest(read("Dockerfile")), manifest.dig("Dockerfile", "sha256")
+  end
+
+  def test_an_edited_deploy_file_is_merged_from_the_template_it_came_from
+    generate_old_deploy
+    edit(@root, "config/deploy.yml") { |text| text.gsub("192.168.0.1", "203.0.113.10") }
+    result = update(answers: %w[m])
+
+    assert_equal ["config/deploy.yml"], result.merged
+    config = read("config/deploy.yml")
+
+    assert_includes config, "primary_role: api", "the release's change"
+    assert_includes config, "203.0.113.10", "your server"
+    refute_includes config, "<<<<<<<"
+  end
+
+  def test_a_merged_file_is_not_offered_again
+    generate_old_deploy
+    edit(@root, "config/deploy.yml") { |text| text.gsub("192.168.0.1", "203.0.113.10") }
+    update(answers: %w[m])
+    @out = StringIO.new
+    result = update(answers: [])
+
+    assert_empty result.conflicts
+    refute_includes @out.string, "config/deploy.yml"
+  end
+
+  def test_apps_without_a_deploy_setup_are_left_alone
+    result = update
+
+    refute_includes result.created, "bin/deploy"
+    refute File.exist?(File.join(@root, "Dockerfile"))
+  end
+
+  def test_a_file_of_your_own_with_the_same_name_is_offered_not_merged
+    generate_old_deploy
+    File.write(File.join(@root, "bin/deploy"), "#!/bin/sh\nexec kamal deploy\n")
+    result = update(answers: %w[m s])
+
+    assert_includes @out.string, "Can't merge"
+    assert_includes result.conflicts, "bin/deploy"
+    assert_equal "#!/bin/sh\nexec kamal deploy\n", read("bin/deploy")
+    refute manifest.key?("bin/deploy"), "still yours"
+  end
+end

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "digest"
 require "fileutils"
 require "json"
 require "net/http"
@@ -82,11 +83,19 @@ module GemStack
     # template are applied to your copy, keeping your edits. Where both changed
     # the same lines the file gets <<<<<<< conflict markers to resolve.
     #
+    # The files `gemstack generate deploy` wrote (Dockerfile, config/deploy.yml,
+    # .kamal/secrets, bin/…) are updated the same way. .gemstack/generators.json
+    # records each one's content as generated: a file that still matches was
+    # never edited; for one you edited, the release whose render matches is the
+    # base the merge starts from. Files a release adds (bin/deploy) are created.
+    #
     # Apps record the templates they're on in .gemstack/version. Older apps don't,
     # so each file is compared with every earlier release's template: matching
     # one means you never edited it (it's just out of date). Without any old
     # templates (offline), files that differ are offered, never updated.
     class TemplateUpdate
+      include DeployFiles
+
       VERSION_FILE = ".gemstack/version"
       # Managed elsewhere: the Gemfile by `gemstack update`/Bundler. Migrations
       # (db/migrations/) are the app's history and never part of an update.
@@ -121,6 +130,7 @@ module GemStack
         new_tree = render(Generator::TEMPLATES, version: GemStack::VERSION)
         old_trees = old_trees_for_comparison
         new_tree.each { |path, file| apply(path, file, old_trees.map { |tree| tree[path]&.content }) }
+        update_deploy_files
         report
         record_version unless @dry_run || @result.conflicts.any?
         @result
@@ -230,11 +240,11 @@ module GemStack
         status("update", path)
       end
 
-      def conflict(path, file, mine, bases)
+      def conflict(path, file, mine, bases, reason: "changed in this version and you edited it")
         return record_conflict(path) unless @interactive
 
         loop do
-          case @prompt.call("#{path} changed in this version and you edited it — [m]erge (keeps your edits), " \
+          case @prompt.call("#{path} #{reason} — [m]erge (keeps your edits), " \
                             "[o]verwrite, [s]kip, [d]iff, save as [n]ew file?")
           when "m"
             return if merge(path, file, mine, bases)
