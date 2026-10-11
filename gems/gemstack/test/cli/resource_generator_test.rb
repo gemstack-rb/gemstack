@@ -678,6 +678,21 @@ class DeployCommandTest < Minitest::Test
     assert_equal %w[bundle exec kamal logs], @ran.first
   end
 
+  def test_refuses_unresolved_merge_conflicts
+    File.write("#{@root}/config/deploy.yml", <<~YAML)
+      service: shop
+      <<<<<<< config/deploy.yml (yours)
+      primary_role: web
+      =======
+      primary_role: api
+      >>>>>>> config/deploy.yml (GemStack 0.4.3)
+    YAML
+    error = assert_raises(Thor::Error) { deploy("logs") }
+
+    assert_includes error.message, "config/deploy.yml (lines 2, 6)"
+    assert_nil @ran
+  end
+
   def test_needs_a_kamal_config
     FileUtils.rm("#{@root}/config/deploy.yml")
 
