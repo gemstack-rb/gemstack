@@ -319,7 +319,7 @@ bundle exec ruby -e '
   puts "config/deploy.yml is valid (roles: #{roles.join(", ")})"
 '
 bin/gemstack d deploy --yes
-test ! -f config/deploy.yml && test ! -f Dockerfile && test ! -f .kamal/secrets && test ! -f bin/docker-entrypoint
+test ! -f config/deploy.yml && test ! -f Dockerfile && test ! -f .kamal/secrets && test ! -f bin/docker-entrypoint && test ! -f bin/deploy
 if grep -q '^gem "kamal"' Gemfile; then echo "destroy deploy left the kamal gem in the Gemfile"; exit 1; fi
 bundle install --quiet
 

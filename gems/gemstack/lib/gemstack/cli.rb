@@ -28,6 +28,7 @@ module GemStack
     require_relative "cli/template_update"
     require_relative "cli/commands/db"
     require_relative "cli/commands/jobs"
+    require_relative "cli/commands/deploy"
     require_relative "cli/console_methods"
     require_relative "cli/helpers"
 
@@ -238,7 +239,7 @@ module GemStack
       "~> VERSION" and runs bundle update for them. Without VERSION, uses the latest release on
       rubygems.org. Then updates the files `gemstack new` wrote (config, bin/, frontend setup…):
       files the release didn't change are left alone, new ones are created, ones you never edited
-      are updated, and for ones you edited you choose: overwrite, skip, see the diff, or FILE.new.
+      are updated, and for ones you edited you choose: merge, overwrite, skip, see the diff, or FILE.new.
 
         gemstack update                       # the latest release
         gemstack update 0.4.2                 # a specific version

@@ -1,0 +1,9 @@
+#!/bin/sh
+# Deploys with Kamal, the root .env.production / .env loaded (docs/deployment.md):
+#
+#   bin/deploy                # build, push and deploy the last commit
+#   bin/deploy setup          # the first deploy: Docker, kamal-proxy, accessories
+#   bin/deploy logs           # any Kamal command or alias: console, migrate, rollback VERSION…
+set -e
+cd "$(dirname "$0")/.."
+exec bundle exec gemstack deploy "$@"

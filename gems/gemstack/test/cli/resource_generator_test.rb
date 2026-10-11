@@ -525,7 +525,9 @@ class DeployGeneratorTest < Minitest::Test
     assert_includes dockerfile, "USER app"
     assert_includes dockerfile, %(ENTRYPOINT ["/app/bin/docker-entrypoint"])
     assert_equal "my-shop", config["service"]
-    assert_equal "web", config["primary_role"]
+    # The API boots first: the web role's healthcheck renders pages that call it.
+    assert_equal "api", config["primary_role"]
+    assert config.dig("servers", "web", "proxy"), "web isn't primary, so its proxy is enabled explicitly"
     assert_equal({ "ssl" => true, "host" => "app.example.com", "app_port" => 3000, "healthcheck" => { "path" => "/" } },
                  config["proxy"])
     assert_equal "node -r ./frontend/lib/gemstack/root-env.cjs frontend/server.js", config.dig("servers", "web", "cmd")
@@ -548,6 +550,8 @@ class DeployGeneratorTest < Minitest::Test
     entrypoint = "#{@root}/bin/docker-entrypoint"
 
     assert File.executable?(entrypoint)
+    assert File.executable?("#{@root}/bin/deploy")
+    assert_includes read("bin/deploy"), "exec bundle exec gemstack deploy"
     assert_includes File.read(entrypoint), "bundle exec gemstack db:migrate"
     assert_includes read("Gemfile"), %(gem "kamal", require: false, group: :development)
     assert_includes read(".dockerignore"), ".kamal/"
@@ -623,5 +627,60 @@ class DeployGeneratorTest < Minitest::Test
     generate(%(path "/src/gemstack/gems" do\n  gem "gemstack"\nend\n))
 
     assert_includes @out.string, "bundle cache --all"
+  end
+end
+
+class DeployCommandTest < Minitest::Test
+  def setup
+    @root = Dir.mktmpdir("gemstack-deploy")
+    FileUtils.mkdir_p("#{@root}/config")
+    File.write("#{@root}/config/deploy.yml", "service: shop\n")
+    @env = { "SECRET_KEY_BASE" => "from-the-environment" }
+    @out = StringIO.new
+    @ran = nil
+  end
+
+  def teardown = FileUtils.rm_rf(@root)
+
+  def deploy(*args)
+    GemStack::CLI::DeployCommand.new(root: @root, env: @env, output: @out,
+                                     exec: ->(*command, **opts) { @ran = [command, opts] }).run(args)
+  end
+
+  def test_runs_kamal_with_the_root_env_files_loaded
+    File.write("#{@root}/.env", "DATABASE_PASSWORD=shared\nSMTP_URL=smtp://dev\nSECRET_KEY_BASE=from-file\n")
+    File.write("#{@root}/.env.production", "SMTP_URL=smtp://production\n")
+    File.write("#{@root}/.env.local", "DATABASE_PASSWORD=local-development\n")
+    deploy("logs")
+
+    assert_equal [%w[bundle exec kamal logs], { chdir: @root }], @ran
+    assert_equal "smtp://production", @env["SMTP_URL"], ".env.production wins over .env"
+    assert_equal "shared", @env["DATABASE_PASSWORD"], ".env.local (development overrides) is never read"
+    assert_equal "from-the-environment", @env["SECRET_KEY_BASE"], "the real environment wins"
+    assert_includes @out.string, "from .env.production, .env"
+  end
+
+  def test_no_arguments_deploys
+    deploy
+
+    assert_equal %w[bundle exec kamal deploy], @ran.first
+  end
+
+  def test_refuses_to_build_with_uncommitted_changes
+    system("git", "-C", @root, "init", "-q", exception: true)
+    File.write("#{@root}/new_file.rb", "")
+    error = assert_raises(Thor::Error) { deploy }
+
+    assert_match(/Uncommitted changes/, error.message)
+    assert_nil @ran
+    deploy("logs") # only commands that build check
+
+    assert_equal %w[bundle exec kamal logs], @ran.first
+  end
+
+  def test_needs_a_kamal_config
+    FileUtils.rm("#{@root}/config/deploy.yml")
+
+    assert_raises(Thor::Error) { deploy }
   end
 end

@@ -14,7 +14,8 @@ module GemStack
       # Kinds that change the API, so the TypeScript contract is regenerated after them.
       CONTRACT_KINDS = %w[model controller resource].freeze
       # What `gemstack generate deploy` writes at the app's root.
-      DEPLOY_FILES = %w[Dockerfile .dockerignore config/deploy.yml .kamal/secrets bin/docker-entrypoint].freeze
+      DEPLOY_FILES = %w[Dockerfile .dockerignore config/deploy.yml .kamal/secrets bin/docker-entrypoint
+                        bin/deploy].freeze
       SHARED = (Generator::BASE_CLASSES.values + %w[
         app/controllers/application_controller.rb test/test_helper.rb
         frontend/lib/format.ts frontend/lib/gemstack/client.ts

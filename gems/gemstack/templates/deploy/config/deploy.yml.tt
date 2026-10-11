@@ -1,10 +1,12 @@
 # Kamal deploy configuration for <%= app_name %> (gemstack generate deploy — docs/deployment.md).
 #
-#   bundle exec kamal setup    # first deploy: Docker, kamal-proxy (HTTPS) and accessories on the server
-#   bundle exec kamal deploy   # every deploy after that, with zero downtime
+#   bin/deploy setup    # first deploy: Docker, kamal-proxy (HTTPS) and accessories on the server
+#   bin/deploy          # every deploy after that (the last commit), with zero downtime
+#   bin/deploy logs     # any Kamal command or alias below: console, migrate, rollback VERSION…
 #
-# Replace the placeholders marked CHANGE. Secrets are read from .kamal/secrets,
-# which only references environment variables, never their values.
+# bin/deploy (gemstack deploy) runs Kamal with the root .env.production and .env
+# loaded. Replace the placeholders marked CHANGE. Secrets are read from
+# .kamal/secrets, which only references those variables, never their values.
 
 service: <%= service %>
 
@@ -17,6 +19,8 @@ servers:
     hosts:
       - 192.168.0.1 # CHANGE: your server's IP or hostname
     cmd: node -r ./frontend/lib/gemstack/root-env.cjs frontend/server.js
+    # Not the primary role (see primary_role below), so the proxy is enabled explicitly.
+    proxy: true
     env:
       clear:
         # Server Components call the API directly, through the alias below.
@@ -57,12 +61,21 @@ servers:
     cmd: bundle exec gemstack jobs
 <% end -%>
 
-primary_role: <%= frontend? ? "web" : "api" %>
+<% if frontend? -%>
+# The API boots first: the web role's healthcheck (/) renders pages that call it,
+# which fails on the first deploy if the web role boots before any API is running.
+<% end -%>
+primary_role: api
 
 # HTTPS with a Let's Encrypt certificate: point the domain's DNS at the server first.
 proxy:
   ssl: true
   host: app.example.com # CHANGE: your domain
+  # Serving www and the bare domain: list both (each gets a certificate) and
+  # redirect one to the other in frontend/next.config.ts (docs/deployment.md).
+  # hosts:
+  #   - www.example.com
+  #   - example.com
 <% if frontend? -%>
   app_port: 3000
   healthcheck:
@@ -74,7 +87,7 @@ proxy:
 <% end -%>
 
 registry:
-  # server: ghcr.io # for GitHub's registry; Docker Hub is the default
+  # server: ghcr.io # for GitHub's registry (password: see .kamal/secrets); Docker Hub is the default
   username: your-user # CHANGE
   password:
     - KAMAL_REGISTRY_PASSWORD
@@ -108,6 +121,10 @@ env:
 volumes:
   - "<%= service %>_data:/data"
 <% end -%>
+
+# Kamal connects as root; set the user your server logs in with (e.g. ubuntu on AWS).
+# ssh:
+#   user: ubuntu
 
 builder:
   arch: amd64
@@ -153,7 +170,7 @@ accessories:
 <% end -%>
 <% end -%>
 
-# bundle exec kamal console | logs | migrate | shell
+# bin/deploy console | logs | migrate | shell
 aliases:
   console: app exec --interactive --reuse --roles=api "bundle exec gemstack console"
   logs: app logs --follow
