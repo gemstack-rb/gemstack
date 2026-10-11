@@ -2,7 +2,7 @@
 
 All GemStack gems are released together with one version.
 
-## Unreleased
+## 0.4.3
 
 - **`bin/deploy` / `gemstack deploy`**: runs Kamal with the root `.env.production.local`, `.env.production`
   and `.env` loaded (never `.env.local`), so `.kamal/secrets` resolves from the same `.env` as everything

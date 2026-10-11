@@ -242,7 +242,7 @@ module GemStack
       are updated, and for ones you edited you choose: merge, overwrite, skip, see the diff, or FILE.new.
 
         gemstack update                       # the latest release
-        gemstack update 0.4.2                 # a specific version
+        gemstack update 0.4.3                 # a specific version
         gemstack update --templates --dry-run # only the template step, preview
         gemstack update --templates --from 0.3.5
     DESC
