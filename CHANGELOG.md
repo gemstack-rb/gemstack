@@ -4,6 +4,9 @@ All GemStack gems are released together with one version.
 
 ## Unreleased
 
+- `gemstack deploy` (`bin/deploy`) refuses to run when `config/deploy.yml`, `.kamal/secrets` or the
+  Dockerfile still contain conflict markers from a `gemstack update` merge, naming the files and lines —
+  instead of Kamal failing with a YAML syntax error.
 - New apps' `.gitignore` ignores every `.env` file except `.env.example` (`.env.*`), so `.env.production`
   — where production values go — is never committed; it used to cover only `.env`, `.env.local` and
   `.env.*.local`. Existing apps get it through `gemstack update`.

@@ -16,6 +16,10 @@ module GemStack
       # Kamal builds the image from a clone of the last commit: uncommitted
       # changes wouldn't be deployed.
       BUILDS = %w[deploy setup redeploy build].freeze
+      # What Kamal reads: a merge left unresolved in one of them (gemstack update)
+      # breaks the deploy with a parse error that doesn't say why.
+      CONFIG_FILES = %w[config/deploy.yml .kamal/secrets Dockerfile .dockerignore bin/docker-entrypoint].freeze
+      CONFLICT = /^(?:<<<<<<<|>>>>>>>)(?: |$)/
 
       def initialize(root:, env: ENV, output: $stderr, exec: ->(*command, **opts) { Kernel.exec(*command, **opts) })
         @root = root
@@ -30,6 +34,7 @@ module GemStack
         end
 
         args = ["deploy"] if args.empty?
+        refuse_unresolved_merges!
         refuse_uncommitted_changes! if BUILDS.include?(args.first)
         load_env_files
         @exec.call("bundle", "exec", "kamal", *args, chdir: @root)
@@ -46,6 +51,20 @@ module GemStack
         loaded = Dotenv.load(files, env: @env)
         names = files.map { |path| File.basename(path) }.join(", ")
         @output.puts("gemstack deploy: #{loaded.size} settings from #{names} (the environment wins)")
+      end
+
+      def refuse_unresolved_merges!
+        conflicts = CONFIG_FILES.filter_map do |rel|
+          path = File.join(@root, rel)
+          next unless File.file?(path)
+
+          lines = File.foreach(path).with_index(1).filter_map { |line, number| number if line.match?(CONFLICT) }
+          "#{rel} (line#{"s" if lines.size > 1} #{lines.join(", ")})" if lines.any?
+        end
+        return if conflicts.empty?
+
+        raise Thor::Error, "Unresolved merge conflicts from `gemstack update` in #{conflicts.join("; ")}. In each " \
+                           "block keep the side you want and delete the <<<<<<<, ======= and >>>>>>> lines."
       end
 
       def refuse_uncommitted_changes!
