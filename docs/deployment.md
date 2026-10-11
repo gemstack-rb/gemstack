@@ -1,151 +1,295 @@
-# Deployment
+# Deploying to production
 
-A GemStack app is two processes:
+This guide takes a GemStack app from your laptop to a live HTTPS site on your own server, step by
+step. It uses [Kamal](https://kamal-deploy.org), which GemStack sets up for you: you run one command on
+your machine, and Kamal builds the app, copies it to the server and switches traffic over with zero
+downtime. Nothing is installed by hand on the server.
 
-```bash
-# Ruby API (Puma, config/puma.rb)
-GEMSTACK_ENV=production GEMSTACK_API_PORT=4000 WEB_CONCURRENCY=2 bundle exec puma -C config/puma.rb
-# or: gemstack server -e production -p 4000
+- [What you'll end up with](#what-youll-end-up-with)
+- [Before you start](#before-you-start)
+- [Step-by-step: the first deploy](#step-by-step-the-first-deploy)
+- [Everyday commands](#everyday-commands)
+- [Common tasks](#common-tasks) — your own settings, www and the bare domain, the database, more servers
+- [Troubleshooting](#troubleshooting)
+- [How configuration reaches production](#how-configuration-reaches-production)
+- [Without Kamal](#without-kamal) — other servers and platforms
+- [Production checklist](#production-checklist)
 
-# Next.js
-cd frontend && npm ci && npm run build && npm start
+## What you'll end up with
+
+```text
+                    https://example.com
+                            │
+                  kamal-proxy (HTTPS, Let's Encrypt)
+                  ├── /api/*  ──▶ api role   Ruby API (Puma)          ─┐
+                  └── /*      ──▶ web role   Next.js                   ├─▶ PostgreSQL / MySQL
+                                  jobs role  background job worker    ─┘   (a container on the server)
 ```
 
-Run background job workers as a third process type (scale them
-independently; any number can share the queue):
+- **One server** (any Linux VM with SSH: Hetzner, DigitalOcean, AWS EC2, Google Cloud, your own box)
+  runs everything in Docker containers.
+- **One Docker image** holds the whole app; each role runs a different command from it.
+- **kamal-proxy** gets a free HTTPS certificate for your domain and routes `/api` to Ruby and everything
+  else to Next.js — the same single origin as `gemstack dev`.
+- **Your database** runs as a container on the same server (a Kamal "accessory"). SQLite apps keep
+  their database file on a volume instead.
+- **Deploys** build a new image, start new containers, wait until they're healthy, then switch traffic.
+  The api role starts first and applies pending migrations before it serves anything.
 
-```bash
-GEMSTACK_ENV=production DATABASE_URL=… bundle exec gemstack jobs -c 10
-```
+## Before you start
 
-Run migrations on each release, before starting the new API processes:
+You need:
 
-```bash
-GEMSTACK_ENV=production DATABASE_URL=… bundle exec gemstack db:migrate
-```
+| | What | Notes |
+| --- | --- | --- |
+| 1 | **A server** with a public IP | Ubuntu or Debian, 2 GB RAM or more. Ports **22**, **80** and **443** open (on AWS: the security group). |
+| 2 | **SSH access** from your machine | as `root`, or a user with passwordless `sudo` (e.g. `ubuntu` on AWS). Test it: `ssh ubuntu@203.0.113.10`. |
+| 3 | **A domain** | you'll point it at the server in step 2. |
+| 4 | **A container registry account** | where the image is stored between your machine and the server: Docker Hub, or GitHub's registry (ghcr.io). See step 4 for a way to skip this with one server. |
+| 5 | **Docker on your machine**, running | Kamal builds the image locally. Docker Desktop is fine. |
 
-Production defaults: JSON logs with request IDs, no exception details in
-responses, eager loading, HSTS on HTTPS requests.
+Docker on the **server** is installed for you by the first deploy (it needs root or passwordless `sudo`;
+otherwise [install Docker](https://docs.docker.com/engine/install/) there first).
 
-### Environment and `.env`
+## Step-by-step: the first deploy
 
-One `.env` at the app root configures both processes, in every environment: the
-API loads `.env.production.local`, `.env.local`, `.env.production` and `.env`
-(earlier files win), and `frontend/next.config.ts` loads the same files for
-`next build` and `next start`. Real environment variables always win, so a
-platform's settings override the files.
+The examples use the domain `example.com`, the server `203.0.113.10` and the app name `shop`.
 
-- `NEXT_PUBLIC_*` values are compiled into the JavaScript at **build** time: have
-  them in the root `.env` (or the environment) where `npm run build` runs, and
-  rebuild after changing one.
-- Next.js's standalone server doesn't run `next.config.ts`, so it's started with
-  the same loader as a preload: `npm run start:standalone` in `frontend/`
-  (`node -r ./lib/gemstack/root-env.cjs .next/standalone/server.js`, after copying
-  `public/` and `.next/static/` into `.next/standalone/` as Next.js requires). The
-  Docker image starts it the same way. Without the preload, server-side code would
-  only see real environment variables.
-- With Kamal, the image contains no `.env`: runtime settings come from
-  `config/deploy.yml` (`env:`) and `.kamal/secrets`. For the frontend build,
-  `.kamal/secrets` passes the `NEXT_PUBLIC_*` lines of the root `.env.production`
-  and `.env` as a build secret (`GEMSTACK_PUBLIC_ENV`), mounted for `next build`
-  only — public values, never stored in the image, nothing else from the file.
+### Step 1 — Generate the deploy files
 
-## Kamal
+In your app's folder:
 
 ```bash
 gemstack generate deploy
-bundle install                # adds the kamal gem (development group)
-bundle lock --add-checksums   # when Gemfile.lock lists gem checksums (Bundler 4); the generator says so
+bundle install
+bundle lock --add-checksums     # only if the generator tells you to (Bundler 4 lockfiles)
 ```
 
-writes a [Kamal](https://kamal-deploy.org) setup for any server you can reach over SSH (a VPS, a cloud VM,
-bare metal):
+This creates (commit them all):
 
-| File | What it is |
-| --- | --- |
-| `Dockerfile` | one image for every process: the Ruby API, the jobs worker and Next.js's standalone server |
-| `config/deploy.yml` | roles **web** (Next.js), **api** (Puma) and **jobs** (worker); kamal-proxy; database accessories |
-| `.kamal/secrets` | *references* to secrets (`SECRET_KEY_BASE=$SECRET_KEY_BASE`), never their values; committed to git |
-| `bin/docker-entrypoint` | the api role applies pending migrations before it starts serving |
-| `bin/deploy` | runs Kamal (`gemstack deploy`) with the root `.env.production` / `.env` loaded |
-| `.dockerignore` | keeps `.git`, `.env*`, `.kamal/`, keys and `node_modules` out of the image |
+| File | What it is | Do you edit it? |
+| --- | --- | --- |
+| `config/deploy.yml` | the Kamal configuration: server, domain, roles, database | **yes**, step 3 |
+| `.kamal/secrets` | which secret values Kamal passes to the app — as *references* like `$SECRET_KEY_BASE`, never the values themselves | only to add your own settings |
+| `bin/deploy` | the command you deploy with: Kamal, with your root `.env.production` / `.env` loaded | no |
+| `Dockerfile` | builds the one image for every role | rarely |
+| `bin/docker-entrypoint` | applies pending migrations when the api role starts | no |
+| `.dockerignore` | keeps `.env` files, `.git`, keys and `node_modules` out of the image | no |
 
-How requests flow: kamal-proxy terminates HTTPS (Let's Encrypt) for your domain, sends `/api/*` to the
-api role and everything else to the web role — one origin, as in development. Next.js Server Components
-reach the API directly through the `<service>-api` network alias. Deploys are zero-downtime: the proxy
-switches to new containers once their health checks (`/` and `/api/health`) pass. The api role is the
-primary role, so it boots first: the web role's health check renders pages that call the API.
+It also adds the `kamal` gem to your Gemfile (development group) and turns on Next.js's standalone
+output in `frontend/next.config.ts`.
 
-The images run as a non-root user and contain no `.env` files or secrets: everything comes from
-environment variables at runtime, except the frontend's `NEXT_PUBLIC_*` values, which `next build`
-compiles in from the root `.env` ([environment](#environment-and-env)). The PostgreSQL or MySQL accessory (from `config/database.yml`) runs
-on the same server; Redis is added when realtime needs it; SQLite gets a persistent volume.
+### Step 2 — Point your domain at the server
 
-### First deploy
+At your DNS provider, create an **A record** for your domain with the server's IP:
 
-1. **A server** with SSH access, ports 80 and 443 open. Kamal connects as `root`; for another user
-   (`ubuntu` on AWS, for example) uncomment `ssh: user:` in `config/deploy.yml`. Kamal installs Docker
-   on the server during setup.
-2. **A domain** whose DNS points at the server (Let's Encrypt checks it) — for both names if you serve
-   `www` and the bare domain ([below](#www-and-the-bare-domain)).
-3. **Edit the `CHANGE` lines** in `config/deploy.yml`: the server IP (every role and accessory), the
-   domain (`proxy: host:` and `APP_URL`), and your registry user.
-4. **A container registry.** Docker Hub by default: create an access token and use it as
-   `KAMAL_REGISTRY_PASSWORD`. For GitHub's registry set `registry: server: ghcr.io`; the password can
-   come from the GitHub CLI: `KAMAL_REGISTRY_PASSWORD=$(gh auth token)` in `.kamal/secrets`, after
-   `gh auth refresh -s write:packages`. With a single server you can skip the account entirely with
-   `registry: server: localhost:5555` — Kamal pushes the image to the server over SSH.
-5. **Put the production values in the root `.env.production`** (git-ignored, next to `.env`):
+```text
+example.com.        A    203.0.113.10
+www.example.com.    A    203.0.113.10     # if you also serve www (see "www and the bare domain")
+```
 
-   ```bash
-   KAMAL_REGISTRY_PASSWORD=…                           # the registry token
-   SECRET_KEY_BASE=…                                   # openssl rand -hex 64; the same value on every deploy
-   POSTGRES_PASSWORD=…                                 # openssl rand -hex 16; MYSQL_PASSWORD for MySQL
-   SMTP_URL=smtp://user:password@smtp.example.com:587  # leave empty until you send email
-   NEXT_PUBLIC_…=…                                     # the frontend's public settings, if any
-   ```
+HTTPS certificates are issued only once the domain resolves to the server. Check with
+`dig +short example.com` before deploying.
 
-   `bin/deploy` loads `.env.production.local`, `.env.production` and `.env` (earlier files win; your
-   shell's variables win over all) before Kamal resolves `.kamal/secrets`. It never reads `.env.local`,
-   which holds development overrides. A password manager works too: `$(kamal secrets fetch …)` in
-   `.kamal/secrets`.
-6. **Deploy** from your own machine (Kamal connects to the server; nothing is installed by hand there):
+### Step 3 — Edit `config/deploy.yml`
 
-   ```bash
-   bin/deploy setup      # first time: Docker, kamal-proxy, the database, then the app
-   bin/deploy            # every deploy after that
-   ```
+Open it and change every line marked `# CHANGE`:
 
-   Kamal builds the image from the last **commit**, so `bin/deploy` refuses to build while there are
-   uncommitted changes.
+```yaml
+service: shop
+image: your-dockerhub-user/shop          # CHANGE: <registry user>/<app>
 
-Run `gemstack doctor` before committing: it fails if `.kamal/secrets` contains a value instead of a
-reference.
+servers:
+  web:
+    hosts:
+      - 203.0.113.10                     # CHANGE: your server's IP — in every role and accessory
+  api:
+    hosts:
+      - 203.0.113.10
+  jobs:
+    hosts:
+      - 203.0.113.10
 
-### Day to day
+proxy:
+  ssl: true
+  host: example.com                      # CHANGE: your domain
+
+registry:
+  username: your-dockerhub-user          # CHANGE
+
+env:
+  clear:
+    APP_URL: https://example.com         # CHANGE: your public URL (used in email links)
+    MAIL_FROM: hello@example.com         # CHANGE (apps that send email)
+
+accessories:
+  db:
+    host: 203.0.113.10                   # CHANGE
+```
+
+If you log in to the server as a user other than `root`, uncomment and set:
+
+```yaml
+ssh:
+  user: ubuntu
+```
+
+Leave the rest as generated: the roles, `/api` routing, health checks and `primary_role: api` (the API
+starts before the frontend, whose health check renders pages that call it).
+
+### Step 4 — Choose a container registry
+
+Kamal pushes the image from your machine to a registry, and the server pulls it from there.
+
+- **Docker Hub** (the default): create an access token under *Account settings → Personal access
+  tokens*. It becomes `KAMAL_REGISTRY_PASSWORD` in step 5.
+- **GitHub's registry**: set `server: ghcr.io` under `registry:` and your GitHub user as `username`. In
+  `.kamal/secrets`, let the GitHub CLI supply the token:
+
+  ```bash
+  gh auth refresh -s write:packages      # once
+  ```
+
+  ```bash
+  # .kamal/secrets
+  KAMAL_REGISTRY_PASSWORD=$(gh auth token)
+  ```
+
+- **No registry account** (one server only): set `server: localhost:5555` under `registry:` and remove
+  `username:` and `password:`; Kamal pushes the image to the server over SSH.
+
+### Step 5 — Put the production values in `.env.production`
+
+Production settings live in one file at the app root, **`.env.production`**, next to the `.env` you
+use in development. It's git-ignored: it stays on your machine and is read by `bin/deploy` each time
+you deploy.
 
 ```bash
-bin/deploy                     # build, push and switch with zero downtime
-bin/deploy logs                # follow the logs (alias in config/deploy.yml)
-bin/deploy console             # gemstack console on the server
-bin/deploy migrate             # gemstack db:migrate (deploys run it already)
-bin/deploy shell               # a shell in the api container
-bin/deploy rollback VERSION    # any other Kamal command works the same way
+# .env.production — never commit this file
+KAMAL_REGISTRY_PASSWORD=dckr_pat_…          # step 4 (not needed with $(gh auth token) or localhost:5555)
+SECRET_KEY_BASE=…                           # run: openssl rand -hex 64 — keep the same value forever
+POSTGRES_PASSWORD=…                         # run: openssl rand -hex 16 (MySQL apps: MYSQL_PASSWORD)
+SMTP_URL=smtp://user:password@smtp.example.com:587   # apps that send email; leave empty until then
+# NEXT_PUBLIC_MAPBOX_TOKEN=pk.…             # the frontend's public settings, if it has any
 ```
 
-### Adding your own settings
+Which variables you need is exactly the list in `.kamal/secrets`. You don't write `DATABASE_URL`:
+`.kamal/secrets` builds it from `POSTGRES_PASSWORD` and the database container's name.
 
-A setting your app reads from `ENV` (an OAuth client, an API key) needs three lines:
+Values that are the same in development and production can stay in `.env`; `.env.production` wins
+where both have a value. `.env.local` is never used for deploys (it holds your development overrides).
 
-1. its value in the root `.env.production` (or `.env` if it's the same in every environment);
-2. a reference in `.kamal/secrets`: `GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET`;
-3. its name under `env: secret:` in `config/deploy.yml` — or, for a value that isn't secret (a callback
-   URL), under `env: clear:` directly, with no `.kamal/secrets` line.
+### Step 6 — Check and commit
 
-### www and the bare domain
+```bash
+gemstack doctor                  # fails if a secret value (not a $REFERENCE) is in .kamal/secrets,
+                                 # or if .env files or keys are tracked by git
+git add -A && git commit -m "Deploy with Kamal"
+```
 
-List both names under `proxy: hosts:` (instead of `host:`) so each gets a certificate, point both at
-the server in DNS, and redirect one to the other in `frontend/next.config.ts`:
+Kamal builds the image **from your last commit**, so anything uncommitted isn't deployed —
+`bin/deploy` refuses to run until you commit.
+
+### Step 7 — Deploy for the first time
+
+```bash
+bin/deploy setup
+```
+
+This takes a few minutes the first time. Kamal:
+
+1. connects to the server and installs Docker if it's missing;
+2. starts the database container;
+3. builds the image on your machine and pushes it to the registry;
+4. starts kamal-proxy, then the api role (which applies migrations), the web role and the jobs worker,
+   waiting for each to pass its health check;
+5. gets the HTTPS certificate on the first request to your domain.
+
+Then check it:
+
+```bash
+curl https://example.com/api/health      # {"status":"ok"}
+```
+
+and open `https://example.com` in a browser. To check the production settings on the server itself
+(secret key, database, mail):
+
+```bash
+bin/deploy app exec --roles=api "bundle exec gemstack doctor --production"
+```
+
+If something fails, see [Troubleshooting](#troubleshooting).
+
+### Step 8 — Every deploy after that
+
+```bash
+git commit -am "…"
+bin/deploy
+```
+
+## Everyday commands
+
+`bin/deploy` passes anything after it to Kamal, with your `.env.production` / `.env` loaded:
+
+```bash
+bin/deploy                     # build, push and switch to the last commit (zero downtime)
+bin/deploy logs                # follow the app's logs
+bin/deploy console             # gemstack console on the server
+bin/deploy migrate             # run pending migrations (deploys already do this)
+bin/deploy shell               # a shell inside the api container
+bin/deploy app details         # what's running
+bin/deploy rollback VERSION    # go back to an earlier image (versions: bin/deploy app containers)
+```
+
+`bin/deploy` is a small script around `gemstack deploy`; `gemstack deploy logs` is the same command.
+
+## Common tasks
+
+### Add a setting your app reads from ENV
+
+Say your app uses `ENV["GOOGLE_CLIENT_SECRET"]`. A **secret** value needs three lines:
+
+1. the value, in `.env.production`:
+   `GOOGLE_CLIENT_SECRET=…`
+2. a reference, in `.kamal/secrets` (committed — the name only, never the value):
+   `GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET`
+3. its name, in `config/deploy.yml`:
+
+   ```yaml
+   env:
+     secret:
+       - GOOGLE_CLIENT_SECRET
+   ```
+
+A value that **isn't secret** (a public callback URL, a feature flag) goes straight into
+`config/deploy.yml`, nothing else:
+
+```yaml
+env:
+  clear:
+    GOOGLE_REDIRECT_URI: https://example.com/api/auth/google/callback
+```
+
+A **frontend** setting the browser needs is a `NEXT_PUBLIC_*` variable: put it in `.env.production`
+(or `.env`) and deploy. It's compiled into the JavaScript during the build, so changing it needs a new
+deploy, and it's public by nature — never put a secret in a `NEXT_PUBLIC_*` variable.
+
+Then commit and `bin/deploy`.
+
+### Serve www and the bare domain
+
+Point both names at the server (step 2), list both in `config/deploy.yml` instead of `host:` so each
+gets a certificate:
+
+```yaml
+proxy:
+  ssl: true
+  hosts:
+    - www.example.com
+    - example.com
+```
+
+and redirect one to the other in `frontend/next.config.ts`:
 
 ```ts
 async redirects() {
@@ -157,98 +301,114 @@ async redirects() {
 },
 ```
 
-Set `APP_URL` (and any OAuth callback URLs) to the canonical name.
+Set `APP_URL` (and OAuth callback URLs) to the name you redirect to.
 
-Notes:
+### The database
 
-- **One HTTPS role per domain.** `/api` shares the web role's certificate, so the api role has
-  `ssl: false` — that is expected, requests to `/api` are still HTTPS. It also has
-  `forward_headers: false`, so kamal-proxy sets `X-Forwarded-For`/`-Proto` itself instead of trusting
-  values sent by clients (IP-based rate limits rely on it).
-- **Back up the database.** The accessory keeps its data in a directory on the server; schedule dumps.
-- **Several servers?** List more hosts under a role. Use `config.cache.store = :redis` (`REDIS_URL`) so
-  the cache and auth's rate limits are shared, and move the database to a managed service or its own host.
-  SQLite needs every role on one server.
+- **Where it is:** a `postgres:17` (or `mysql:8.4`) container on your server, storing its data in a
+  directory there; the app reaches it by the container's name (`shop-db`).
+- **Backups are up to you:** schedule `pg_dump` (or `mysqldump`), for example from cron on the server,
+  and copy the dumps off it.
+- **A managed database instead** (RDS, Neon, …): delete the `accessories: db:` block and set
+  `DATABASE_URL` in `.env.production` and `.kamal/secrets` to the provider's URL
+  (`DATABASE_URL=$DATABASE_URL`).
+- **SQLite:** the file lives on a Docker volume shared by every role, so every role must stay on one
+  server. PostgreSQL is recommended for production ([databases](database.md)).
 
-> **Gem checksums.** Bundler 4 lockfiles list a checksum per gem, and a gem installed from your local
-> cache (the `kamal` gem, for example) can be added without one, which the image's frozen
-> `bundle install` may refuse. Run `bundle lock --add-checksums` and commit `Gemfile.lock`.
+### More servers
 
-> Apps created from a GemStack **checkout** reference it with an absolute
-> `path` in the Gemfile, which the image can't see. Run `bundle cache --all`
-> (the Dockerfile copies `vendor/`), or use released gems.
+List more hosts under a role (for example two `web` and two `api` hosts). With several hosts, use a
+shared cache (`config.cache.store = :redis`, `REDIS_URL`) so the cache and auth's rate limits are
+shared, and move the database to a managed service or its own server.
 
-### Hosting platforms
+## Troubleshooting
 
-Kamal works with any provider that gives you a Linux server with SSH: Hetzner, DigitalOcean Droplets,
-AWS EC2, Google Compute Engine, Linode, or your own hardware. You always run `kamal` from your machine
-(or CI), never on the server. Presets for platforms that run containers for you (Heroku, Fly.io,
-Render, Railway) are planned; until then the image runs any role through its command
-(`node -r ./frontend/lib/gemstack/root-env.cjs frontend/server.js`, `bundle exec puma -C config/puma.rb`, `bundle exec gemstack jobs`) and
-the options below cover how `/api` reaches Ruby there.
+| Symptom | Cause and fix |
+| --- | --- |
+| `bin/deploy: Uncommitted changes` | Kamal deploys the last commit. Commit or stash your changes. |
+| `No config/deploy.yml` | Run `gemstack generate deploy` first (step 1). |
+| SSH fails: `Permission denied` or `Authentication failed` | Check `ssh <user>@<ip>` works from your terminal; set `ssh: user:` in `config/deploy.yml` when the user isn't `root`. |
+| `Docker is not installed … can't be automatically installed` | The SSH user has neither root nor passwordless `sudo`. Install Docker on the server yourself, add the user to the `docker` group, and deploy again. |
+| Pushing the image fails (`unauthorized`, `denied`) | `KAMAL_REGISTRY_PASSWORD` is missing or wrong, or the `image:` / `username:` doesn't match the account. For ghcr.io the token needs `write:packages`. |
+| The image build fails in `bundle install` mentioning **checksums** | Run `bundle lock --add-checksums` and commit `Gemfile.lock`. |
+| The build can't find GemStack gems (`path` in the Gemfile) | Apps created from a GemStack checkout point at it with a local path the image can't see. Use released gems, or `bundle cache --all` (the image copies `vendor/`). |
+| The **web** role fails its health check on the first deploy | Apps generated before GemStack 0.4.3 have `primary_role: web`: set `primary_role: api` and add `proxy: true` under `servers: web:`, so the API starts first. |
+| The **api** role fails its health check | Usually the database: run `bin/deploy logs` and look for connection errors; check `POSTGRES_PASSWORD` is set in `.env.production`. |
+| The browser warns about the certificate | DNS doesn't point at the server yet, or port 80 is closed (Let's Encrypt checks over HTTP). Fix it, then reload; the proxy retries. |
+| A setting is empty on the server | It's missing from one of the three places in [add a setting](#add-a-setting-your-app-reads-from-env), or `.env.production` doesn't contain it. `bin/deploy` prints which files it loaded. |
+| A `NEXT_PUBLIC_*` value is missing in the browser | It wasn't in `.env.production` / `.env` when the image was built. Add it and deploy again. |
+| Something else | `bin/deploy logs`, `bin/deploy app details`, and Kamal's [documentation](https://kamal-deploy.org/docs/). |
 
-## Choose how `/api` reaches Ruby
+## How configuration reaches production
 
-The browser always calls same-origin `/api/...`, so pick one:
+GemStack apps keep their settings in the root `.env` files (git-ignored), for the Ruby API and the
+Next.js frontend alike. What reads what:
 
-### 1. Reverse proxy (what Kamal does)
+| Where | Files | Notes |
+| --- | --- | --- |
+| `gemstack dev`, tests | `.env.<env>.local`, `.env.local`, `.env.<env>`, `.env` | earlier files win |
+| `bin/deploy` (your machine) | `.env.production.local`, `.env.production`, `.env` | never `.env.local` |
+| The server (Kamal) | none — the image contains no `.env` | values arrive as environment variables, through `.kamal/secrets` and `env:` in `config/deploy.yml` |
+| `next build` (in the image) | the `NEXT_PUBLIC_*` lines of `.env.production` / `.env` | passed as a build secret; public values only, compiled into the JavaScript |
 
-kamal-proxy, Caddy, nginx or a platform's router sends `/api/*` to Puma and everything else to
-Next.js. With Kamal this is already configured.
+In every case a real environment variable wins over the files. So the path of a secret is:
+`.env.production` (your machine) → `bin/deploy` loads it → `.kamal/secrets` references it → Kamal sets
+it on the containers listed under `env: secret:`.
 
-### 2. Next.js rewrites (alternative approach)
+## Without Kamal
 
-If not using Kamal's proxy, the generated `next.config.ts` proxies `/api/*` to
-`GEMSTACK_API_URL` when it is set. Deploy Next.js publicly and the API privately:
+The image (or the app itself) runs anywhere. A GemStack app is three processes:
 
 ```bash
-cd frontend
-GEMSTACK_API_URL=http://api.internal:4000 npm run build   # rewrites are fixed at build time
-GEMSTACK_API_URL=http://api.internal:4000 npm start       # also used by Server Components
+# Ruby API
+GEMSTACK_ENV=production GEMSTACK_API_PORT=4000 WEB_CONCURRENCY=2 bundle exec puma -C config/puma.rb
+
+# Background jobs (any number of workers can share the queue)
+GEMSTACK_ENV=production bundle exec gemstack jobs -c 10
+
+# Next.js
+cd frontend && npm ci && npm run build && npm start
 ```
 
-> **Set `GEMSTACK_API_URL` at build time.** Next.js evaluates `rewrites()` during
-> `next build`; changing it only at runtime does not change the rewrite target.
+Run `GEMSTACK_ENV=production bundle exec gemstack db:migrate` on each release, before starting the new
+API processes. Outside Docker, both the API and Next.js read the root `.env.production` / `.env` on the
+server (real environment variables win), and `NEXT_PUBLIC_*` values must be there when
+`npm run build` runs. Next.js's standalone server reads them through a preload:
+`npm run start:standalone` in `frontend/`.
 
-Realtime works through the rewrites: `next start` (Next.js 16) passes WebSocket upgrades
-on rewrites to the API, and Server-Sent Events stream through as plain HTTP. If something in
-front of Next.js drops WebSocket upgrades, the client (in its default `auto` mode) falls back to
-Server-Sent Events by itself — see docs/realtime.md.
+From the Docker image, the commands are
+`node -r ./frontend/lib/gemstack/root-env.cjs frontend/server.js`, `bundle exec puma -C config/puma.rb`
+and `bundle exec gemstack jobs`. Presets for container platforms (Heroku, Fly.io, Render, Railway) are
+planned.
 
-### 3. Separate domains
+### How `/api` reaches Ruby
 
-If the API must live on `api.example.com`:
+The browser always calls `/api/...` on the site's own origin, so one of these must route it:
 
-```ruby
-# config/environments/production.rb
-config.http.cors.origins = ["https://example.com"]
-```
+1. **A reverse proxy** (what Kamal does): kamal-proxy, Caddy, nginx or a platform's router sends
+   `/api/*` to Puma and everything else to Next.js. For realtime behind nginx, set
+   `proxy_http_version 1.1`, the `Upgrade` and `Connection "upgrade"` headers and a
+   `proxy_read_timeout` above 15 s for `/api/realtime` ([realtime](realtime.md)).
+2. **Next.js rewrites:** set `GEMSTACK_API_URL` (e.g. `http://api.internal:4000`) **when building**
+   the frontend, and Next.js proxies `/api/*` to Ruby — HTTP, Server-Sent Events and WebSockets. Deploy
+   Next.js publicly and the API privately.
+3. **Separate domains** (`api.example.com`): build the frontend with
+   `NEXT_PUBLIC_GEMSTACK_API_URL=https://api.example.com` and allow the site in
+   `config/environments/production.rb`: `config.http.cors.origins = ["https://example.com"]`.
 
-and build the frontend with `NEXT_PUBLIC_GEMSTACK_API_URL=https://api.example.com`.
+## Production checklist
 
-## Checklist
-
-- Run `gemstack doctor --production` with the production environment variables.
-
-- `GEMSTACK_ENV=production` and `DATABASE_URL` for the API; `db:migrate` on release.
-- Database connections (PostgreSQL/MySQL): `WEB_CONCURRENCY × GEMSTACK_MAX_THREADS` per host (pool per worker).
-- For SQLite: Kamal generates a volume definition to persist the database file.
-- SSL/TLS is handled automatically by kamal-proxy (Let's Encrypt) or can be brought externally.
-- `WEB_CONCURRENCY` ≈ CPU cores, `GEMSTACK_MAX_THREADS` 3–5.
-- YJIT is enabled automatically in production (`config.jit`); nothing to set.
-- Brotli comes from `gem "brotli"` (in new apps' Gemfile; gzip otherwise); with a compressing CDN/proxy in front, either is fine
-  (GemStack never re-compresses encoded responses).
-- Several processes/hosts? Use `config.cache.store = :redis` (`gem "redis-client"`, `REDIS_URL`).
-- Realtime is `/api/realtime` (WebSocket, or Server-Sent Events as the fallback): kamal-proxy routes
-  it to the api role with the rest of `/api` (verified). Behind nginx, set `proxy_http_version 1.1`,
-  `Upgrade` and `Connection "upgrade"` for that path, and `proxy_read_timeout` above the 15 s ping
-  (the stream sends `X-Accel-Buffering: no`, so nginx doesn't buffer it); see docs/realtime.md.
-- `SECRET_KEY_BASE` (`openssl rand -hex 64`) — needed by storage signatures and any module using
-  `GemStack.key_for`; keep it stable across deploys.
-- With auth: `SMTP_URL`, `MAIL_FROM` and `APP_URL` (the frontend's public URL, for email links); run a
-  jobs worker (emails are sent from jobs); serve over HTTPS (the session cookie is `Secure`); call
-  `GemStack::Auth.cleanup!` daily; use the Redis cache store with several hosts so rate limits are shared.
-- With storage: `STORAGE_SERVICE=s3`, `S3_BUCKET`, `AWS_REGION` (+ credentials), `gem "aws-sdk-s3"`, and
-  a bucket CORS rule allowing `PUT` from your site (docs/storage.md).
-- Health check: `GET /api/health` → `200 {"status":"ok"}`.
-- Collect stdout: each line is a JSON object with `level`, `msg`, `id`.
+- `gemstack doctor --production` passes where the production values are — on a Kamal server, inside
+  the api container: `bin/deploy app exec --roles=api "bundle exec gemstack doctor --production"`.
+- `SECRET_KEY_BASE` is set (`openssl rand -hex 64`) and **never changes** — signed links and sessions
+  depend on it.
+- The database is backed up, and the backups are copied off the server.
+- Apps with auth or mailers: `SMTP_URL`, `MAIL_FROM` and `APP_URL` are set; a jobs worker runs (emails
+  are sent from jobs); call `GemStack::Auth.cleanup!` daily.
+- Apps with file uploads: storage is configured for production ([storage](storage.md)).
+- Health check: `GET /api/health` returns `200 {"status":"ok"}`.
+- Logs: each line on stdout is a JSON object (`level`, `msg`, `id`); `bin/deploy logs` follows them.
+- Sizing: `WEB_CONCURRENCY` ≈ CPU cores and `GEMSTACK_MAX_THREADS` 3–5; database connections needed per
+  host = `WEB_CONCURRENCY × GEMSTACK_MAX_THREADS`. YJIT is on automatically.
+- Production defaults need no setup: HTTPS-only cookies, HSTS, JSON logs with request IDs, no exception
+  details in responses, Brotli/gzip compression.

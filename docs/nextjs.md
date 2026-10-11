@@ -95,7 +95,7 @@ Next.js — required by `next.config.ts` (`gemstack dev`, `next build`,
 they must be in the root `.env` (or the environment) **when the frontend is
 built**, and changing one needs a rebuild. Anything without the prefix stays on
 the server. The Docker image (`gemstack generate deploy`) receives the root `.env`'s
-`NEXT_PUBLIC_*` lines as a build secret ([deployment](deployment.md#environment-and-env)).
+`NEXT_PUBLIC_*` lines as a build secret ([deployment](deployment.md#how-configuration-reaches-production)).
 
 | Variable | Where | Meaning |
 |---|---|---|
