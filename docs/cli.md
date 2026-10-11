@@ -116,8 +116,9 @@ gemstack update --templates --from 0.3.5 # rerun it, comparing with 0.3.5's temp
 
 `gemstack update` sets every GemStack gem in the Gemfile to the new version and runs `bundle update`
 (the Gemfile is restored if that fails). Then it updates the files `gemstack new` wrote — config,
-`bin/`, the frontend setup — by comparing three versions of each: yours, the old release's template and
-the new one's.
+`bin/`, the frontend setup — and, if the app has a deploy setup, the files `gemstack generate deploy`
+wrote (`Dockerfile`, `config/deploy.yml`, `.kamal/secrets`, `bin/deploy`…), by comparing three versions
+of each: yours, the old release's template and the new one's.
 
 | The file… | What happens |
 | --- | --- |
@@ -136,8 +137,14 @@ included — commit first, or use merge.
 Nothing you edited is overwritten without asking; outside a terminal (scripts, CI) those files are listed
 for you instead. The app records the templates it's on in `.gemstack/version` (commit it). The old
 release's templates come from the installed gem, or are downloaded from rubygems.org; if neither works,
-files that differ are offered, never updated automatically. Files `gemstack add` and the generators wrote
-(auth, realtime, resources…) are yours and aren't part of this step.
+files that differ are offered, never updated automatically. Files `gemstack add` and the other generators
+wrote (auth, realtime, resources…) are yours and aren't part of this step.
+
+Deploy files are matched by what `.gemstack/generators.json` recorded when they were generated (commit
+it): one that still matches was never edited and is updated; for one you edited — `config/deploy.yml`
+always is, with your server and domain — the merge starts from the exact template it came from, so
+only the release's changes are applied. A file a release adds (like `bin/deploy`) is created, unless
+you already have one of your own with that name: then it's offered.
 
 ## Environments
 

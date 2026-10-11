@@ -7,9 +7,12 @@ module GemStack
     # to Ruby and handles HTTPS; database accessories), .kamal/secrets,
     # bin/docker-entrypoint and .dockerignore. Nothing is deployed anywhere.
     class DeployGenerator < Generator
-      def initialize(root:, output: $stdout, force: false)
+      # templates: another release's templates/ directory (gemstack update
+      # renders old releases' deploy files to compare with).
+      def initialize(root:, output: $stdout, force: false, templates: nil)
         super(output: output, force: force)
         @root = root
+        @templates = templates
       end
 
       # Bundler 4 lockfiles list gem checksums; gems installed from the local

@@ -25,6 +25,7 @@ module GemStack
     require_relative "cli/deploy_generator"
     require_relative "cli/add_generator"
     require_relative "cli/update_generator"
+    require_relative "cli/deploy_files"
     require_relative "cli/template_update"
     require_relative "cli/commands/db"
     require_relative "cli/commands/jobs"
