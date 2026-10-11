@@ -168,9 +168,14 @@ const said = (events, text) => events.some((e) => e.data && e.data.text === text
   await until(() => said(events, "hi"), "broadcast from receive");
   await until(() => here("e2e-client"), "own presence");
 
-  const other = new NativeEventSource(`${api}?channels=e2e&user=other`);
+  // Another user: a plain streaming request, aborted to leave. (Node's built-in
+  // EventSource sometimes reconnects after close(), which would rejoin within
+  // the presence grace period and never leave.)
+  const other = new AbortController();
+  nativeFetch(`${api}?channels=e2e&user=other`, { signal: other.signal })
+    .then((response) => response.body.getReader().read()).catch(() => {});
   await until(() => here("other"), "another user's join");
-  other.close();
+  other.abort();
   await until(() => !here("other"), "another user's leave");
 
   // Another channel while connected (Server-Sent Events: the stream reopens).
