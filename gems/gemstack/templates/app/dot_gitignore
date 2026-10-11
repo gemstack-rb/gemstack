@@ -3,9 +3,11 @@
 /tmp/
 /db/*.sqlite3
 /db/*.sqlite3-*
+# Settings and secrets (.env.production holds production's): never committed.
+# .env.example is the committed sample.
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
 node_modules/
 /frontend/.next/

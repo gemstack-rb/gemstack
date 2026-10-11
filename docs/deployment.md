@@ -161,8 +161,10 @@ Kamal pushes the image from your machine to a registry, and the server pulls it 
 ### Step 5 — Put the production values in `.env.production`
 
 Production settings live in one file at the app root, **`.env.production`**, next to the `.env` you
-use in development. It's git-ignored: it stays on your machine and is read by `bin/deploy` each time
-you deploy.
+use in development. It's git-ignored (`.env.*` in the `.gitignore` of apps created with GemStack 0.4.3
+or later; in older apps, `gemstack update` adds it — or add `.env.*` and `!.env.example` yourself, and
+check with `git check-ignore .env.production`): it stays on your machine and is read by `bin/deploy`
+each time you deploy.
 
 ```bash
 # .env.production — never commit this file

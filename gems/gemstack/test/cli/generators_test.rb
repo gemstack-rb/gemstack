@@ -84,6 +84,13 @@ class AppGeneratorTest < Minitest::Test
     assert_includes yml, %(<%= ENV.fetch("GEMSTACK_MAX_THREADS", 5) %>), "runtime ERB is kept"
     assert_match(/^gem "sqlite3", "~> 2\.0"/, File.read(File.join(root, "Gemfile")))
     assert_includes File.read(File.join(root, ".gitignore")), "/db/*.sqlite3\n"
+    system("git", "-C", root, "init", "-q", exception: true)
+    ignored = %w[.env .env.local .env.production .env.production.local .env.development .env.example].select do |file|
+      system("git", "-C", root, "check-ignore", "-q", file)
+    end
+
+    assert_equal %w[.env .env.local .env.production .env.production.local .env.development], ignored,
+                 "every .env file but the committed sample"
     settings = GemStack::DB::Configuration.from_hash(
       YAML.safe_load(ERB.new(yml).result, aliases: true)["test"], root: root
     )
