@@ -152,4 +152,6 @@ Something not working? `gemstack doctor` checks your setup and says what to fix;
 runs, [http://localhost:3000/api/docs](http://localhost:3000/api/docs) lists every endpoint
 ([development tools](development.md)).
 
-Next: [routing](routing.md), [controllers](controllers.md), [configuration](configuration.md).
+Next: [routing](routing.md), [controllers](controllers.md), [configuration](configuration.md). When
+you're ready to go live: the [deployment guide](deployment.md) takes the app to your own server with
+HTTPS, step by step.

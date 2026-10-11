@@ -98,10 +98,11 @@ const created: Product = await products.create({ name: "Lamp", price: "9.99" });
 | `gemstack destroy resource Product` / `gemstack d model Product` | remove tracked generated code (`--dry-run`, `--yes`, `--force`); preserve applied/committed migrations and database data ([migration rules and flags](docs/cli.md#remove-generated-code)) |
 | `gemstack g migration AddStockToProducts stock:integer` | a migration |
 | `gemstack g job SendDigest [QUEUE]` | a background job (`gemstack jobs` runs a worker) |
-| `gemstack g policy Order` / `gemstack g deploy` | an authorization policy / a Kamal deploy (Dockerfile, config/deploy.yml) |
+| `gemstack g policy Order` | an authorization policy |
+| `gemstack g deploy`, then `bin/deploy` | deploy to your own server with HTTPS, step by step: [deployment guide](docs/deployment.md) |
 | `gemstack db:create` · `db:migrate` · `db:rollback` · `db:status` · `db:seed` · `db:setup` · `db:reset` · `db:drop` | the database (`gemstack new` already runs `db:create`) |
 | `gemstack add auth\|storage\|realtime` | optional modules |
-| `gemstack doctor` | check the setup and how to fix it (`--production` before deploying) |
+| `gemstack doctor` | check the setup and how to fix it (`--production` with the production settings) |
 | `gemstack update` | move the app to the latest GemStack release: every GemStack gem in the Gemfile, then `bundle update` |
 | `gemstack contract` | regenerate TypeScript types, API clients, OpenAPI |
 | `gemstack routes` · `gemstack test` / `t` · `gemstack console` / `c` · `gemstack version` | |
