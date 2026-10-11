@@ -55,6 +55,7 @@ platform's settings override the files.
 ```bash
 gemstack generate deploy
 bundle install                # adds the kamal gem (development group)
+bundle lock --add-checksums   # when Gemfile.lock lists gem checksums (Bundler 4); the generator says so
 ```
 
 writes a [Kamal](https://kamal-deploy.org) setup for any server you can reach over SSH (a VPS, a cloud VM,
@@ -66,12 +67,14 @@ bare metal):
 | `config/deploy.yml` | roles **web** (Next.js), **api** (Puma) and **jobs** (worker); kamal-proxy; database accessories |
 | `.kamal/secrets` | *references* to secrets (`SECRET_KEY_BASE=$SECRET_KEY_BASE`), never their values; committed to git |
 | `bin/docker-entrypoint` | the api role applies pending migrations before it starts serving |
+| `bin/deploy` | runs Kamal (`gemstack deploy`) with the root `.env.production` / `.env` loaded |
 | `.dockerignore` | keeps `.git`, `.env*`, `.kamal/`, keys and `node_modules` out of the image |
 
 How requests flow: kamal-proxy terminates HTTPS (Let's Encrypt) for your domain, sends `/api/*` to the
 api role and everything else to the web role — one origin, as in development. Next.js Server Components
 reach the API directly through the `<service>-api` network alias. Deploys are zero-downtime: the proxy
-switches to new containers once their health checks (`/` and `/api/health`) pass.
+switches to new containers once their health checks (`/` and `/api/health`) pass. The api role is the
+primary role, so it boots first: the web role's health check renders pages that call the API.
 
 The images run as a non-root user and contain no `.env` files or secrets: everything comes from
 environment variables at runtime, except the frontend's `NEXT_PUBLIC_*` values, which `next build`
@@ -80,31 +83,41 @@ on the same server; Redis is added when realtime needs it; SQLite gets a persist
 
 ### First deploy
 
-1. **A server** with SSH access as `root` (or set `ssh: user:`), ports 80 and 443 open. Kamal installs
-   Docker on it during setup.
-2. **A domain** whose DNS points at the server (Let's Encrypt checks it).
+1. **A server** with SSH access, ports 80 and 443 open. Kamal connects as `root`; for another user
+   (`ubuntu` on AWS, for example) uncomment `ssh: user:` in `config/deploy.yml`. Kamal installs Docker
+   on the server during setup.
+2. **A domain** whose DNS points at the server (Let's Encrypt checks it) — for both names if you serve
+   `www` and the bare domain ([below](#www-and-the-bare-domain)).
 3. **Edit the `CHANGE` lines** in `config/deploy.yml`: the server IP (every role and accessory), the
    domain (`proxy: host:` and `APP_URL`), and your registry user.
 4. **A container registry.** Docker Hub by default: create an access token and use it as
-   `KAMAL_REGISTRY_PASSWORD`. For GitHub's registry set `registry: server: ghcr.io`. With a single server
-   you can skip the account entirely with `registry: server: localhost:5555` — Kamal pushes the image to
-   the server over SSH.
-5. **Set the secrets** that `.kamal/secrets` references, in your shell or a password manager
-   (`$(kamal secrets fetch …)`):
+   `KAMAL_REGISTRY_PASSWORD`. For GitHub's registry set `registry: server: ghcr.io`; the password can
+   come from the GitHub CLI: `KAMAL_REGISTRY_PASSWORD=$(gh auth token)` in `.kamal/secrets`, after
+   `gh auth refresh -s write:packages`. With a single server you can skip the account entirely with
+   `registry: server: localhost:5555` — Kamal pushes the image to the server over SSH.
+5. **Put the production values in the root `.env.production`** (git-ignored, next to `.env`):
 
    ```bash
-   export KAMAL_REGISTRY_PASSWORD=…                           # the registry token
-   export SECRET_KEY_BASE=$(openssl rand -hex 64)             # keep it: the same value on every deploy
-   export POSTGRES_PASSWORD=$(openssl rand -hex 16)           # PostgreSQL; MYSQL_PASSWORD for MySQL
-   export SMTP_URL=smtp://user:password@smtp.example.com:587  # leave empty until you send email
+   KAMAL_REGISTRY_PASSWORD=…                           # the registry token
+   SECRET_KEY_BASE=…                                   # openssl rand -hex 64; the same value on every deploy
+   POSTGRES_PASSWORD=…                                 # openssl rand -hex 16; MYSQL_PASSWORD for MySQL
+   SMTP_URL=smtp://user:password@smtp.example.com:587  # leave empty until you send email
+   NEXT_PUBLIC_…=…                                     # the frontend's public settings, if any
    ```
 
+   `bin/deploy` loads `.env.production.local`, `.env.production` and `.env` (earlier files win; your
+   shell's variables win over all) before Kamal resolves `.kamal/secrets`. It never reads `.env.local`,
+   which holds development overrides. A password manager works too: `$(kamal secrets fetch …)` in
+   `.kamal/secrets`.
 6. **Deploy** from your own machine (Kamal connects to the server; nothing is installed by hand there):
 
    ```bash
-   bundle exec kamal setup      # first time: Docker, kamal-proxy, the database, then the app
-   bundle exec kamal deploy     # every deploy after that
+   bin/deploy setup      # first time: Docker, kamal-proxy, the database, then the app
+   bin/deploy            # every deploy after that
    ```
+
+   Kamal builds the image from the last **commit**, so `bin/deploy` refuses to build while there are
+   uncommitted changes.
 
 Run `gemstack doctor` before committing: it fails if `.kamal/secrets` contains a value instead of a
 reference.
@@ -112,13 +125,39 @@ reference.
 ### Day to day
 
 ```bash
-bundle exec kamal deploy       # build, push and switch with zero downtime
-bundle exec kamal logs         # follow the logs (alias in config/deploy.yml)
-bundle exec kamal console      # gemstack console on the server
-bundle exec kamal migrate      # gemstack db:migrate (deploys run it already)
-bundle exec kamal shell        # a shell in the api container
-bundle exec kamal rollback VERSION
+bin/deploy                     # build, push and switch with zero downtime
+bin/deploy logs                # follow the logs (alias in config/deploy.yml)
+bin/deploy console             # gemstack console on the server
+bin/deploy migrate             # gemstack db:migrate (deploys run it already)
+bin/deploy shell               # a shell in the api container
+bin/deploy rollback VERSION    # any other Kamal command works the same way
 ```
+
+### Adding your own settings
+
+A setting your app reads from `ENV` (an OAuth client, an API key) needs three lines:
+
+1. its value in the root `.env.production` (or `.env` if it's the same in every environment);
+2. a reference in `.kamal/secrets`: `GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET`;
+3. its name under `env: secret:` in `config/deploy.yml` — or, for a value that isn't secret (a callback
+   URL), under `env: clear:` directly, with no `.kamal/secrets` line.
+
+### www and the bare domain
+
+List both names under `proxy: hosts:` (instead of `host:`) so each gets a certificate, point both at
+the server in DNS, and redirect one to the other in `frontend/next.config.ts`:
+
+```ts
+async redirects() {
+  return [
+    // example.com → www.example.com, keeping the path
+    { source: "/:path*", has: [{ type: "host", value: "example.com" }],
+      destination: "https://www.example.com/:path*", permanent: true },
+  ];
+},
+```
+
+Set `APP_URL` (and any OAuth callback URLs) to the canonical name.
 
 Notes:
 
@@ -130,6 +169,10 @@ Notes:
 - **Several servers?** List more hosts under a role. Use `config.cache.store = :redis` (`REDIS_URL`) so
   the cache and auth's rate limits are shared, and move the database to a managed service or its own host.
   SQLite needs every role on one server.
+
+> **Gem checksums.** Bundler 4 lockfiles list a checksum per gem, and a gem installed from your local
+> cache (the `kamal` gem, for example) can be added without one, which the image's frozen
+> `bundle install` may refuse. Run `bundle lock --add-checksums` and commit `Gemfile.lock`.
 
 > Apps created from a GemStack **checkout** reference it with an absolute
 > `path` in the Gemfile, which the image can't see. Run `bundle cache --all`

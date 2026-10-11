@@ -34,7 +34,7 @@ What each one removes:
 | `job NAME` | `app/jobs/<name>.rb` and its test (refused while other code still names the job) |
 | `policy NAME` | `app/policies/<name>_policy.rb` and its test (refused while other code still names it) |
 | `migration NAME` | the migration file, under the migration rules below |
-| `deploy` | `Dockerfile`, `.dockerignore`, `config/deploy.yml`, `.kamal/secrets`, `bin/docker-entrypoint` and the `kamal` line it added to the Gemfile (run `bundle install` afterwards) | Use the app's `bin/gemstack` when testing a local
+| `deploy` | `Dockerfile`, `.dockerignore`, `config/deploy.yml`, `.kamal/secrets`, `bin/docker-entrypoint`, `bin/deploy` and the `kamal` line it added to the Gemfile (run `bundle install` afterwards) | Use the app's `bin/gemstack` when testing a local
 checkout so an older globally installed CLI is not selected.
 
 `--dry-run` previews the plan without changing files or regenerating contracts. Removal prompts for
@@ -234,8 +234,13 @@ gemstack g policy Order                # app/policies/order_policy.rb + test
 ### Deployment files
 
 ```bash
-gemstack g deploy                      # Kamal: Dockerfile, config/deploy.yml, .kamal/secrets (docs/deployment.md)
+gemstack g deploy                      # Kamal: Dockerfile, config/deploy.yml, .kamal/secrets, bin/deploy (docs/deployment.md)
 ```
+
+Then deploy with `bin/deploy` (= `gemstack deploy`): Kamal with the root `.env.production.local`,
+`.env.production` and `.env` loaded, so `.kamal/secrets` resolves from them. Without arguments it
+runs `kamal deploy` and refuses while there are uncommitted changes (Kamal builds the last commit);
+any other Kamal command passes through: `bin/deploy setup`, `bin/deploy logs`, `bin/deploy rollback VERSION`.
 
 ### Field syntax
 

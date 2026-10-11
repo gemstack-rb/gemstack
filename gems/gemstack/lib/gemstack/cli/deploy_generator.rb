@@ -12,6 +12,10 @@ module GemStack
         @root = root
       end
 
+      # Bundler 4 lockfiles list gem checksums; gems installed from the local
+      # cache can be added without one, so fill them in before building.
+      CHECKSUMS_HINT = ", then bundle lock --add-checksums (Gemfile.lock lists gem checksums)"
+
       KAMAL_GEM = %(gem "kamal", require: false, group: :development # bundle exec kamal deploy (config/deploy.yml)\n)
       # The image runs Next.js's standalone server (node -r … frontend/server.js); the
       # Dockerfile asks for that build with GEMSTACK_NEXT_OUTPUT=standalone.
@@ -103,7 +107,12 @@ module GemStack
         return status("identical", path, "kamal") if gemfile.match?(/^\s*gem ["']kamal["']/)
 
         File.write(path, "#{gemfile.chomp}\n\n#{KAMAL_GEM}")
-        status("gem", path, "kamal — run bundle install")
+        status("gem", path, "kamal — run bundle install#{CHECKSUMS_HINT if lockfile_checksums?}")
+      end
+
+      def lockfile_checksums?
+        lock = File.join(@root, "Gemfile.lock")
+        File.file?(lock) && File.read(lock).match?(/^CHECKSUMS$/)
       end
 
       def enable_standalone_frontend

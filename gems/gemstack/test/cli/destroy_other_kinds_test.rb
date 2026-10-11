@@ -79,7 +79,7 @@ class DestroyDeployTest < Minitest::Test
   include DestroyTestSupport
 
   GEMFILE = %(source "https://rubygems.org"\n\ngem "gemstack", "~> 0.3.5"\n)
-  FILES = %w[Dockerfile .dockerignore config/deploy.yml .kamal/secrets bin/docker-entrypoint].freeze
+  FILES = %w[Dockerfile .dockerignore config/deploy.yml .kamal/secrets bin/docker-entrypoint bin/deploy].freeze
 
   def setup
     super

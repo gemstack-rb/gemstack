@@ -2,6 +2,20 @@
 
 All GemStack gems are released together with one version.
 
+## Unreleased
+
+- **`bin/deploy` / `gemstack deploy`**: runs Kamal with the root `.env.production.local`, `.env.production`
+  and `.env` loaded (never `.env.local`), so `.kamal/secrets` resolves from the same `.env` as everything
+  else — Kamal doesn't read `.env` itself. Without arguments it deploys, refusing while there are
+  uncommitted changes (Kamal builds the last commit); other Kamal commands pass through
+  (`bin/deploy setup`, `bin/deploy logs`). `gemstack generate deploy` writes `bin/deploy`.
+- `gemstack generate deploy`: the api role is the primary role, so it boots before the web role, whose
+  health check renders pages that call the API (the first deploy could fail before); the web role enables
+  kamal-proxy explicitly. `config/deploy.yml` shows how to serve `www` and the bare domain and to set the
+  SSH user, `.kamal/secrets` how to use GitHub's registry; the generator says to run
+  `bundle lock --add-checksums` when `Gemfile.lock` lists gem checksums. The deployment guide covers these
+  and adding your own settings.
+
 ## 0.4.2
 
 - `gemstack update`: files you edited that the release also changed can be **merged** — `[m]erge` keeps
