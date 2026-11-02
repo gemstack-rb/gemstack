@@ -81,8 +81,8 @@ class DashboardAppTest < Minitest::Test
 
   def call(path, method: "GET", input: nil, cookie: nil, content_type: nil)
     env = Rack::MockRequest.env_for(path, method: method, input: input,
-                                    "HTTP_COOKIE" => cookie,
-                                    "CONTENT_TYPE" => content_type)
+                                          "HTTP_COOKIE" => cookie,
+                                          "CONTENT_TYPE" => content_type)
     @app.call(env)
   end
 
@@ -171,14 +171,14 @@ class DashboardAppTest < Minitest::Test
     form = URI.encode_www_form("_csrf" => token)
 
     status, response_headers, = call("/jobs/7/retry", method: "POST", input: form,
-                                     cookie: cookie, content_type: "application/x-www-form-urlencoded")
+                                                      cookie: cookie, content_type: "application/x-www-form-urlencoded")
 
     assert_equal 303, status
     assert_equal "/jobs/7?notice=retried", response_headers["location"]
     assert_includes @dashboard.calls, [:retry, "7"]
 
     status, = call("/jobs/7/delete?failed=1", method: "POST", input: "_csrf=invalid",
-                   cookie: cookie, content_type: "application/x-www-form-urlencoded")
+                                              cookie: cookie, content_type: "application/x-www-form-urlencoded")
 
     assert_equal 403, status
     refute_includes @dashboard.calls, [:discard, "7"]
@@ -191,20 +191,20 @@ class DashboardAppTest < Minitest::Test
     bulk_form = URI.encode_www_form("_csrf" => token, "ids[]" => %w[8 9], "return_to" => "scheduled",
                                     "queue" => "mailers", "page" => "2")
 
-    status, response_headers, = call("/jobs/8/run_now", method: "POST",
-                                     input: URI.encode_www_form("_csrf" => token), cookie: cookie,
-                                     content_type: "application/x-www-form-urlencoded")
+    status, = call("/jobs/8/run_now", method: "POST",
+                                      input: URI.encode_www_form("_csrf" => token), cookie: cookie,
+                                      content_type: "application/x-www-form-urlencoded")
     assert_equal 303, status
     assert_includes @dashboard.calls, [:run_now, "8"]
 
     status, response_headers, = call("/jobs/bulk/run_now", method: "POST", input: bulk_form, cookie: cookie,
-                                     content_type: "application/x-www-form-urlencoded")
+                                                           content_type: "application/x-www-form-urlencoded")
     assert_equal 303, status
     assert_equal "/jobs/scheduled?queue=mailers&page=2&notice=bulk-run-now-2", response_headers["location"]
     assert_includes @dashboard.calls, [:run_now_many, %w[8 9]]
 
     status, = call("/jobs/8/delete", method: "POST", input: "_csrf=invalid", cookie: cookie,
-                   content_type: "application/x-www-form-urlencoded")
+                                     content_type: "application/x-www-form-urlencoded")
     assert_equal 403, status
     refute_includes @dashboard.calls, [:delete_pending, "8"]
   end
@@ -298,7 +298,7 @@ class DashboardAppDatabaseActionsTest < Minitest::Test
     jobs = GemStack::Jobs::Adapters::Database.new(db: @db)
     listing = jobs.list_jobs(state: :completed)
 
-    assert_equal [completed], listing[:items].map { |job| job[:id] }
+    assert_equal([completed], listing[:items].map { |job| job[:id] })
     assert_equal "completed", listing[:items].first[:state]
 
     cookie, token, html = page("/jobs/completed")
@@ -324,15 +324,15 @@ class DashboardAppDatabaseActionsTest < Minitest::Test
     end
     input = URI.encode_www_form(pairs)
     @app.call(Rack::MockRequest.env_for(path, method: "POST", input: input,
-                                        "HTTP_COOKIE" => cookie,
-                                        "CONTENT_TYPE" => "application/x-www-form-urlencoded"))
+                                              "HTTP_COOKIE" => cookie,
+                                              "CONTENT_TYPE" => "application/x-www-form-urlencoded"))
   end
 
   def test_retry_clears_empty_error_fields_and_restores_ready_state
     id = make_job(last_error: nil)
     cookie, token, html = page("/jobs/failed")
     assert_includes html, "No error details recorded"
-    refute_match(/<strong><\/strong>:\s*<\/td>/, html)
+    refute_match(%r{<strong></strong>:\s*</td>}, html)
 
     status, headers, = post("/jobs/#{id}/retry?return_to=failed&page=1", cookie, token)
 

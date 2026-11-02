@@ -12,6 +12,7 @@ module GemStack
     # Small, self-contained Rack UI for inspecting the database-backed queue.
     # Route mounting is owned by Application; this app handles paths rooted at
     # config.jobs.dashboard.path and can also be called as a mounted Rack app.
+    # rubocop:disable Metrics/ClassLength, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/AbcSize, Metrics/MethodLength, Metrics/BlockLength, Layout/LineLength, Lint/DuplicateBranch, Style/StringConcatenation
     class DashboardApp
       FORM_LIMIT = 16 * 1024
       PAGE_SIZE = 25
@@ -49,9 +50,7 @@ module GemStack
         end
 
         log_exception("jobs dashboard request failed", e)
-        details = if GemStack.env.development?
-                    "#{e.class}: #{e.message}\n\n#{Array(e.backtrace).join("\n")}"
-                  end
+        details = ("#{e.class}: #{e.message}\n\n#{Array(e.backtrace).join("\n")}" if GemStack.env.development?)
         response(500, "The jobs dashboard encountered an unexpected error.", details: details)
       end
 
@@ -69,7 +68,8 @@ module GemStack
           # Legacy routes from the original dashboard URL layout.
           when "/jobs" then legacy_jobs_redirect(request)
           when %r{\A/jobs/(\d+)\z}
-            redirect(route_url(:job, id: Regexp.last_match(1), **request.GET.to_h.transform_keys(&:to_sym)), status: 301)
+            redirect(route_url(:job, id: Regexp.last_match(1), **request.GET.to_h.transform_keys(&:to_sym)),
+                     status: 301)
           else response(404, "Not found")
           end
         else
@@ -126,11 +126,14 @@ module GemStack
         page = query["page"] || "1"
         listing = @dashboard.list(state: state, queue: queue, page: page, per_page: PAGE_SIZE)
         last_page = [(listing[:total].to_f / listing[:per_page]).ceil, 1].max
-        listing = @dashboard.list(state: state, queue: queue, page: last_page, per_page: PAGE_SIZE) if listing[:page] > last_page
+        if listing[:page] > last_page
+          listing = @dashboard.list(state: state, queue: queue, page: last_page,
+                                    per_page: PAGE_SIZE)
+        end
         stats = @dashboard.stats
         counts = state_counts(stats, queue: queue)
         title = state ? state.capitalize : "All jobs"
-        body = +%(<div class="page-heading"><div><p class="eyebrow">Queue monitor</p><h1>#{h(title)}</h1></div></div>)
+        body = %(<div class="page-heading"><div><p class="eyebrow">Queue monitor</p><h1>#{h(title)}</h1></div></div>)
         body << notice(query["notice"])
         body << state_tabs(state, queue, counts)
         body << queue_filter(state, queue, stats)
@@ -144,7 +147,7 @@ module GemStack
         return response(404, "Job not found") unless job
 
         state = job_state(job)
-        body = +%(<p class="breadcrumbs"><a href="#{html_url(route_path(:all))}">Jobs</a> / Job ##{h(job[:id])}</p>)
+        body = %(<p class="breadcrumbs"><a href="#{html_url(route_path(:all))}">Jobs</a> / Job ##{h(job[:id])}</p>)
         body << %(<section class="panel detail-panel"><div class="section-heading"><div><p class="eyebrow">Job ##{h(job[:id])}</p><h1>#{h(job[:job_class])}</h1></div><span class="state state-#{h(state)}">#{h(state)}</span></div>)
         body << %(<dl class="details">)
         fields = { "Queue" => job[:queue], "Priority" => job[:priority], "Attempts" => job[:attempts],
@@ -161,13 +164,19 @@ module GemStack
           trace = backtrace.empty? ? "No backtrace recorded." : backtrace
           body << %(<h3>Backtrace</h3><pre class="code trace">#{h(trace)}</pre></section>)
         end
-        body << %(<div class="row-actions detail-actions">#{job_actions(job, state, env, return_to: "detail")}</div>) if state != "running"
+        if state != "running"
+          body << %(<div class="row-actions detail-actions">#{job_actions(job, state, env,
+                                                                          return_to: "detail")}</div>)
+        end
         body << "</section>"
         html(body, env: env, active: nil)
       end
 
       def mutate(env, id, action, request)
-        return response(405, "Method not allowed", "allow" => "POST") unless env[Rack::REQUEST_METHOD].to_s.upcase == "POST"
+        unless env[Rack::REQUEST_METHOD].to_s.upcase == "POST"
+          return response(405, "Method not allowed",
+                          "allow" => "POST")
+        end
 
         form = parse_form(env)
         return response(403, "Request verification failed") unless valid_csrf?(env, form["_csrf"])
@@ -185,10 +194,10 @@ module GemStack
         route = :job if return_to == "detail" || (route.nil? && action == "retry")
         route ||= :overview
         redirect(route_url(route, id: route == :job ? id : nil, queue: request.GET["queue"],
-                           page: request.GET["page"], notice: action_notice(action)))
+                                  page: request.GET["page"], notice: action_notice(action)))
       end
 
-      def bulk_mutate(env, request, route_action)
+      def bulk_mutate(env, _request, route_action)
         form = parse_form(env)
         return response(403, "Request verification failed") unless valid_csrf?(env, form["_csrf"])
 
@@ -204,7 +213,12 @@ module GemStack
                 when "run-now" then @dashboard.run_now_jobs(ids)
                 else raise ArgumentError, "Unknown bulk action"
                 end
-        route = %w[ready scheduled running failed completed all].include?(form["return_to"]) ? form["return_to"].to_sym : :all
+        route = if %w[ready scheduled running failed completed
+                      all].include?(form["return_to"])
+                  form["return_to"].to_sym
+                else
+                  :all
+                end
         redirect(route_url(route, queue: form["queue"], page: form["page"], notice: "bulk-#{action}-#{count}"))
       end
 
@@ -212,20 +226,26 @@ module GemStack
         items = listing[:items]
         if items.empty?
           label = state || "recent"
-          return %(<p class="empty">No #{h(label)} jobs#{queue ? " in #{h(queue)}" : ""}.</p>)
+          return %(<p class="empty">No #{h(label)} jobs#{" in #{h(queue)}" if queue}.</p>)
         end
 
         body = +""
         unless compact
           token = csrf_token(env)
           return_to = state || "all"
-          body << %(<form id="bulk-jobs" method="post" action="#{html_url(route_path(:bulk_action, action: :retry))}" data-bulk-form><input type="hidden" name="_csrf" value="#{h(token)}"><input type="hidden" name="return_to" value="#{h(return_to)}"><input type="hidden" name="queue" value="#{h(queue)}"><input type="hidden" name="page" value="#{h(listing[:page])}"><div class="bulk-bar"><span class="select-count">Bulk actions</span>)
-          body << %(<button formaction="#{html_url(route_path(:bulk_action, action: :retry))}" class="button"#{' disabled' unless state.nil? || state == "failed"}>Retry selected</button>)
-          body << %(<button formaction="#{html_url(route_path(:bulk_action, action: :run_now))}" class="button secondary"#{' disabled' unless state == "scheduled"}>Run now selected</button>)
-          body << %(<button formaction="#{html_url(route_path(:bulk_action, action: :delete))}" class="button danger" data-confirm="delete"#{' disabled' if state == "running"}>Delete selected</button></div></form>)
+          body << %(<form id="bulk-jobs" method="post" action="#{html_url(route_path(:bulk_action,
+                                                                                     action: :retry))}" data-bulk-form><input type="hidden" name="_csrf" value="#{h(token)}"><input type="hidden" name="return_to" value="#{h(return_to)}"><input type="hidden" name="queue" value="#{h(queue)}"><input type="hidden" name="page" value="#{h(listing[:page])}"><div class="bulk-bar"><span class="select-count">Bulk actions</span>)
+          body << %(<button formaction="#{html_url(route_path(:bulk_action,
+                                                              action: :retry))}" class="button"#{" disabled" unless state.nil? || state == "failed"}>Retry selected</button>)
+          body << %(<button formaction="#{html_url(route_path(:bulk_action,
+                                                              action: :run_now))}" class="button secondary"#{" disabled" unless state == "scheduled"}>Run now selected</button>)
+          body << %(<button formaction="#{html_url(route_path(:bulk_action,
+                                                              action: :delete))}" class="button danger" data-confirm="delete"#{" disabled" if state == "running"}>Delete selected</button></div></form>)
         end
         body << %(<div class="table-wrap"><table class="jobs-table"><thead><tr>)
-        body << %(<th class="check-col"><input type="checkbox" id="select-all" aria-label="Select all jobs on this page"></th>) unless compact
+        unless compact
+          body << %(<th class="check-col"><input type="checkbox" id="select-all" aria-label="Select all jobs on this page"></th>)
+        end
         body << %(<th>ID</th><th>Job</th><th>Queue</th><th>Arguments</th><th>Attempts</th><th>State</th><th>Run at / Enqueued at</th>)
         body << "<th>Error</th>" if state == "failed"
         body << "<th>Actions</th>" unless compact
@@ -239,9 +259,12 @@ module GemStack
                       end
           args_text = JSON.generate(job[:args])
           body << "<tr>"
-          body << %(<td><input type="checkbox" name="ids[]" value="#{h(job[:id])}" form="bulk-jobs" aria-label="Select job #{h(job[:id])}"></td>) unless compact
+          unless compact
+            body << %(<td><input type="checkbox" name="ids[]" value="#{h(job[:id])}" form="bulk-jobs" aria-label="Select job #{h(job[:id])}"></td>)
+          end
           body << %(<td><a class="job-id" href="#{html_url(route_path(:job, id: job[:id]))}">##{h(job[:id])}</a></td>)
-          body << %(<td><a href="#{html_url(route_path(:job, id: job[:id]))}">#{h(job[:job_class])}</a></td><td>#{h(job[:queue])}</td>)
+          body << %(<td><a href="#{html_url(route_path(:job,
+                                                       id: job[:id]))}">#{h(job[:job_class])}</a></td><td>#{h(job[:queue])}</td>)
           body << %(<td class="args-cell" title="#{h(args_text)}">#{h(truncate(args_text, 64))}</td>)
           body << %(<td>#{h(job[:attempts])}</td><td><span class="state state-#{h(job_state)}">#{h(job_state)}</span></td>)
           body << %(<td>#{relative_time(when_time)}</td>)
@@ -252,7 +275,10 @@ module GemStack
                             "#{error_class}: #{error_message.empty? ? "No message" : error_message}"
                           end
           body << %(<td class="error-cell">#{h(truncate(error_summary, 72))}</td>) if state == "failed"
-          body << %(<td class="row-actions">#{job_actions(job, job_state, env, state: state, queue: queue, page: listing[:page])}</td>) unless compact
+          unless compact
+            body << %(<td class="row-actions">#{job_actions(job, job_state, env, state: state, queue: queue,
+                                                                                 page: listing[:page])}</td>)
+          end
           body << "</tr>"
         end
         body << "</tbody></table></div>"
@@ -276,10 +302,13 @@ module GemStack
       end
 
       def state_tabs(state, queue, counts)
-        tabs = [[nil, "All", counts.values.sum], *%w[ready scheduled running failed completed].map { |key| [key, key.capitalize, counts[key]] }]
+        tabs = [[nil, "All", counts.values.sum], *%w[ready scheduled running failed completed].map do |key|
+          [key, key.capitalize, counts[key]]
+        end]
         %(<nav class="state-tabs" aria-label="Job state filter">#{tabs.map do |key, label, count|
           active = state == key ? " active" : ""
-          %(<a class="state-tab#{active}" href="#{html_url(route_path(key ? key.to_sym : :all), queue: queue)}">#{h(label)} <span>#{count}</span></a>)
+          %(<a class="state-tab#{active}" href="#{html_url(route_path(key ? key.to_sym : :all),
+                                                           queue: queue)}">#{h(label)} <span>#{count}</span></a>)
         end.join}</nav>)
       end
 
@@ -293,7 +322,11 @@ module GemStack
 
       def state_counts(stats, queue: nil)
         queues = queue.nil? || queue.empty? ? stats.values : [stats.fetch(queue, {})]
-        %w[ready scheduled running failed completed].to_h { |key| [key, queues.sum { |counts| counts[key.to_sym].to_i }] }
+        %w[ready scheduled running failed completed].to_h do |key|
+          [key, queues.sum do |counts|
+            counts[key.to_sym].to_i
+          end]
+        end
       end
 
       def pagination(listing, state:, queue:)
@@ -304,19 +337,27 @@ module GemStack
         first = total.zero? ? 0 : ((page - 1) * per_page) + 1
         last = [page * per_page, total].min
         return %(<div class="pagination"><span class="page-summary">No jobs to show</span></div>) if total.zero?
-        links = +%(<span class="page-summary">Showing #{first}–#{last} of #{total}</span>)
+
+        links = %(<span class="page-summary">Showing #{first}–#{last} of #{total}</span>)
         if pages > 1
           links << %(<nav class="page-links" aria-label="Job pages">)
-          links << %(<a class="page-link" href="#{html_url(route_path(state ? state.to_sym : :all), queue: queue, page: page - 1)}">Previous</a>) if page > 1
+          if page > 1
+            links << %(<a class="page-link" href="#{html_url(route_path(state ? state.to_sym : :all), queue: queue,
+                                                                                                      page: page - 1)}">Previous</a>)
+          end
           page_window(pages, page).each do |number|
             if number == :ellipsis
               links << %(<span class="page-ellipsis">…</span>)
             else
               klass = number == page ? "page-link current" : "page-link"
-              links << %(<a class="#{klass}" href="#{html_url(route_path(state ? state.to_sym : :all), queue: queue, page: number)}">#{number}</a>)
+              links << %(<a class="#{klass}" href="#{html_url(route_path(state ? state.to_sym : :all), queue: queue,
+                                                                                                       page: number)}">#{number}</a>)
             end
           end
-          links << %(<a class="page-link" href="#{html_url(route_path(state ? state.to_sym : :all), queue: queue, page: page + 1)}">Next</a>) if page < pages
+          if page < pages
+            links << %(<a class="page-link" href="#{html_url(route_path(state ? state.to_sym : :all), queue: queue,
+                                                                                                      page: page + 1)}">Next</a>)
+          end
           links << "</nav>"
         end
         %(<div class="pagination">#{links}</div>)
@@ -334,7 +375,7 @@ module GemStack
         query = { return_to: params[:return_to], queue: params[:queue], page: params[:page],
                   failed: action == "delete" && (params[:state] == "failed" || params[:failed]) ? 1 : nil }
         route_action = { "run-now" => :run_now, "discard" => :delete }.fetch(action, action.to_sym)
-        target = html_url(route_path(:job_action, id: id, action: route_action), **query.reject { |key, _| key == :state })
+        target = html_url(route_path(:job_action, id: id, action: route_action), **query.except(:state))
         klass = destructive ? "button danger small" : "button small"
         confirm = destructive ? %( data-confirm="Delete this job?") : ""
         %(<form class="inline-form" method="post" action="#{target}"#{confirm}><input type="hidden" name="_csrf" value="#{h(token)}"><button class="#{klass}">#{h(label)}</button></form>)
@@ -342,13 +383,17 @@ module GemStack
 
       def notice(value)
         return "" unless value
+
         messages = { "retried" => "Job queued for another attempt.", "discarded" => "Failed job deleted.",
                      "run-now" => "Job scheduled to run now.", "delete" => "Job deleted." }
-        text = messages[value] || (value =~ /\Abulk-(retry|delete|run-now)-(\d+)\z/ && "#{$2} job(s) updated.")
+        text = messages[value] || (value =~ /\Abulk-(retry|delete|run-now)-(\d+)\z/ && "#{::Regexp.last_match(2)} job(s) updated.")
         text ? %(<p class="notice" role="status">#{h(text)}</p>) : ""
       end
 
-      def action_notice(action) = { "retry" => "retried", "discard" => "discarded", "run-now" => "run-now", "run_now" => "run-now", "delete" => "delete" }.fetch(action)
+      def action_notice(action)
+        { "retry" => "retried", "discard" => "discarded", "run-now" => "run-now", "run_now" => "run-now",
+          "delete" => "delete" }.fetch(action)
+      end
 
       def error_parts(error)
         return ["", "", ""] if error.nil? || error.empty?
@@ -410,7 +455,9 @@ module GemStack
 
       def valid_csrf?(env, submitted)
         nonce = Rack::Request.new(env).cookies[COOKIE]
-        return false unless nonce&.match?(/\A[a-f0-9]{64}\z/) && submitted.is_a?(String) && submitted.match?(/\A[a-f0-9]{64}\z/)
+        unless nonce&.match?(/\A[a-f0-9]{64}\z/) && submitted.is_a?(String) && submitted.match?(/\A[a-f0-9]{64}\z/)
+          return false
+        end
 
         expected = OpenSSL::HMAC.hexdigest("SHA256", GemStack.key_for("jobs_dashboard_csrf"), nonce)
         OpenSSL.fixed_length_secure_compare(expected, submitted)
@@ -426,7 +473,8 @@ module GemStack
           headers["set-cookie"] = "#{COOKIE}=#{nonce}; Path=#{cookie_path}; HttpOnly; SameSite=Strict#{secure}"
         end
         script_hash = [OpenSSL::Digest::SHA256.digest(dashboard_script)].pack("m0")
-        headers["content-security-policy"] = "default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-#{script_hash}'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+        headers["content-security-policy"] =
+          "default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-#{script_hash}'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
         page = <<~HTML
           <!doctype html>
           <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -440,7 +488,9 @@ module GemStack
 
       def top_navigation(active)
         counts = state_counts(@dashboard.stats)
-        tabs = [[:overview, "Overview", nil], *%w[ready scheduled running failed completed].map { |state| [state.to_sym, state.capitalize, state] }]
+        tabs = [[:overview, "Overview", nil], *%w[ready scheduled running failed completed].map do |state|
+          [state.to_sym, state.capitalize, state]
+        end]
         %(<nav class="topnav">#{tabs.map do |route, label, state|
           selected = (route == :overview && active == :overview) || state == active ? " active" : ""
           total = state ? counts[state] : counts.values.sum
@@ -503,7 +553,7 @@ module GemStack
         case route.to_sym
         when :overview then "/"
         when :all then "/all"
-          when :ready, :scheduled, :running, :failed, :completed then "/#{route}"
+        when :ready, :scheduled, :running, :failed, :completed then "/#{route}"
         when :job then "/#{Integer(id)}"
         when :job_action then "/#{Integer(id)}/#{action}"
         when :bulk_action then "/bulk/#{action}"
@@ -546,7 +596,7 @@ module GemStack
 
       def missing_jobs_table_error?(error)
         return false unless defined?(Sequel::DatabaseError)
-        return false unless error_chain(error).any? { |item| item.is_a?(Sequel::DatabaseError) }
+        return false unless error_chain(error).any?(Sequel::DatabaseError)
 
         table = Jobs.config.table.to_s.downcase
         error_chain(error).any? do |item|
@@ -567,7 +617,7 @@ module GemStack
 
       def log_exception(message, error)
         GemStack.logger.error(message, error_class: error.class.name, error_message: error.message,
-                                        backtrace: Array(error.backtrace))
+                                       backtrace: Array(error.backtrace))
       end
 
       def styles
@@ -584,6 +634,7 @@ module GemStack
           @media(max-width:480px){.summary-grid{grid-template-columns:1fr 1fr;gap:8px}.summary-card{padding:14px}.summary-card strong{font-size:26px}.details{grid-template-columns:1fr}.page-heading h1{font-size:24px}.pagination{align-items:flex-start;flex-direction:column}.queue-filter{flex-wrap:wrap}}
         CSS
       end
+      # rubocop:enable Metrics/ClassLength, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/AbcSize, Metrics/MethodLength, Metrics/BlockLength, Layout/LineLength, Lint/DuplicateBranch, Style/StringConcatenation
     end
   end
 end

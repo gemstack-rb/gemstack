@@ -76,4 +76,23 @@ class AppTest < Minitest::Test
 
     assert_equal 200, status
   end
+
+  def test_path_dispatch_matches_mount_on_segment_boundary
+    mounted = ->(env) { [200, {}, ["mounted:#{env[Rack::PATH_INFO]}"]] }
+    fallback = ->(env) { [404, {}, ["api:#{env[Rack::PATH_INFO]}"]] }
+    dispatch = GemStack::HTTP::PathDispatch.new(fallback, path: "/jobs", mounted_app: mounted)
+
+    assert_equal "mounted:/jobs/42", dispatch.call(env_for("/jobs/42"))[2].join
+    assert_equal "api:/jobs-extra", dispatch.call(env_for("/jobs-extra"))[2].join
+  end
+
+  def test_path_dispatch_matches_rack_mount_script_name
+    mounted = ->(_env) { [200, {}, ["mounted"]] }
+    fallback = ->(_env) { [404, {}, ["api"]] }
+    dispatch = GemStack::HTTP::PathDispatch.new(fallback, path: "/jobs", mounted_app: mounted)
+    env = env_for("/42")
+    env[Rack::SCRIPT_NAME] = "/jobs"
+
+    assert_equal 200, dispatch.call(env)[0]
+  end
 end

@@ -183,15 +183,19 @@ module GemStack
         raise ConfigurationError,
               "jobs dashboard path #{dashboard_path.inspect} overlaps config.http.api_path #{api_path.inspect}"
       end
-      if health_path && paths_overlap?(health_path, dashboard_path)
-        raise ConfigurationError,
-              "jobs dashboard path #{dashboard_path.inspect} overlaps config.http.health_path #{health_path.inspect}"
-      end
+      return unless health_path && paths_overlap?(health_path, dashboard_path)
+
+      raise ConfigurationError,
+            "jobs dashboard path #{dashboard_path.inspect} overlaps config.http.health_path #{health_path.inspect}"
     end
 
     def normalize_mount_path(path)
       value = path.to_s.gsub(%r{/+}, "/").sub(%r{/$}, "")
-      value.empty? ? "/" : (value.start_with?("/") ? value : "/#{value}")
+      if value.empty?
+        "/"
+      else
+        (value.start_with?("/") ? value : "/#{value}")
+      end
     end
 
     def paths_overlap?(left, right)

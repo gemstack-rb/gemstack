@@ -57,6 +57,5 @@ module GemStack
            adapter.respond_to?(:delete_jobs))
       end
     end
-
   end
 end

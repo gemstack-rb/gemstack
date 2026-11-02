@@ -12,6 +12,7 @@ module GemStack
     # fix what can't. Every check is independent: one
     # failure never hides the others. `--production` checks the settings a
     # deploy needs.
+    # rubocop:disable-next Metrics/ClassLength
     class Doctor
       include UpgradeCheck
       include SecretChecks

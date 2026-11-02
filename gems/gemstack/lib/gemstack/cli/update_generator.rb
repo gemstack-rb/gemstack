@@ -62,6 +62,7 @@ module GemStack
 
       private
 
+      # rubocop:disable-next Metrics/MethodLength
       def update(gemfile, listed, current, target)
         @output.puts("Updating GemStack #{current || "(not installed yet)"} → #{target}")
         updated = listed.reduce(gemfile) { |text, name| constrain(text, name, target) }
@@ -84,7 +85,11 @@ module GemStack
         end
 
         @output.puts("\nGemStack #{target} is installed.\n\n")
-        return failure("generated files weren't reconciled; resolve template conflicts, then run: gemstack update --templates") unless update_templates(target)
+        unless update_templates(target)
+          return failure(
+            "generated files weren't reconciled; resolve template conflicts, then run: gemstack update --templates"
+          )
+        end
 
         report_jobs_dashboard(target)
         @output.puts(<<~DONE)

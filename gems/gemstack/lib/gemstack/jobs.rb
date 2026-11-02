@@ -64,8 +64,9 @@ module GemStack
         def path=(value)
           value = value.to_s
           unless value.start_with?("/") && !value.start_with?("//") &&
-                 !value.match?(/[?#\\\\\s]/) && value !~ %r{//|/\z}
-            raise ArgumentError, "jobs.dashboard.path must be an absolute path without a trailing slash, query, or fragment"
+                 !value.match?(/[?#\\\s]/) && value !~ %r{//|/\z}
+            raise ArgumentError,
+                  "jobs.dashboard.path must be an absolute path without a trailing slash, query, or fragment"
           end
 
           @values[:path] = value

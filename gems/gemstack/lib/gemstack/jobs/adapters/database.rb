@@ -183,12 +183,14 @@ module GemStack
         # included for the UI, but error traces remain detail-only.
         #
         # Returns { items:, page:, per_page:, total: }.
+        # rubocop:disable-next Metrics/AbcSize
         def list_jobs(state: nil, queue: nil, page: 1, per_page: 25)
           page = positive_integer(page, "page")
           per_page = positive_integer(per_page, "per_page")
           if per_page > MAX_DASHBOARD_PAGE_SIZE
             raise ArgumentError, "per_page must be at most #{MAX_DASHBOARD_PAGE_SIZE}"
           end
+
           state = state&.to_s
           if state && !DASHBOARD_STATES.include?(state)
             raise ArgumentError, "state must be one of #{DASHBOARD_STATES.join(", ")}"
@@ -269,8 +271,10 @@ module GemStack
              [Sequel[:run_at] > now, "scheduled"]], "ready"
           )
           dataset.group_and_count(:queue, states.as(:state)).all.each_with_object({}) do |row, result|
-            (result[row[:queue]] ||= { ready: 0, scheduled: 0, running: 0, failed: 0, completed: 0 })[row[:state].to_sym] =
-              row[:count]
+            state_counts = result[row[:queue]] ||= {
+              ready: 0, scheduled: 0, running: 0, failed: 0, completed: 0
+            }
+            state_counts[row[:state].to_sym] = row[:count]
           end
         end
 

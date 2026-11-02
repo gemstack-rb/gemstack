@@ -151,6 +151,7 @@ module GemStack
         "npm"
       end
 
+      # rubocop:disable-next Metrics/AbcSize
       def banner
         url = "http://localhost:#{@gateway.port}"
         t = @terminal

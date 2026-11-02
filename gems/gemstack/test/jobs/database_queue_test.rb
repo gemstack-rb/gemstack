@@ -29,6 +29,7 @@ class DatabaseQueueTest < Minitest::Test
     db.drop_table(:gemstack_jobs)
     db.create_table(:gemstack_jobs) { primary_key :id }
     Sequel.extension :migration
+    # rubocop:disable-next Security/Eval -- Migration source is evaluated here to verify its legacy upgrade path.
     eval(GemStack::Jobs::Migration::COMPLETED_AT_SOURCE, TOPLEVEL_BINDING,
          "add_completed_at_to_gemstack_jobs.rb").apply(db, :up)
 
@@ -130,20 +131,20 @@ class DatabaseQueueTest < Minitest::Test
     failed = enqueue(RecordingJob, "failed")
     rows.where(id: running).update(locked_at: Time.now, locked_by: "dashboard-worker")
     rows.where(id: failed).update(locked_at: nil, locked_by: nil, failed_at: Time.now,
-                                 last_error: "RuntimeError: broken")
+                                  last_error: "RuntimeError: broken")
 
     all = store.list_jobs(per_page: 10)
     assert_equal 4, all[:total]
     assert_equal %w[failed ready running scheduled], all[:items].map { |job| job[:state] }.sort
     ordered = store.list_jobs(per_page: 4)[:items]
-    assert_equal [failed, running, scheduled, ready], ordered.map { |job| job[:id] }
+    assert_equal([failed, running, scheduled, ready], ordered.map { |job| job[:id] })
     assert_equal ["failed"], ordered.first[:args]
-    assert_equal ["ready"], store.list_jobs(state: :ready, queue: "recording")[:items].map { |job| job[:state] }
-    assert_equal [scheduled], store.list_jobs(state: "scheduled")[:items].map { |job| job[:id] }
-    assert_equal [running], store.list_jobs(state: "running")[:items].map { |job| job[:id] }
-    assert_equal [failed], store.list_jobs(state: "failed")[:items].map { |job| job[:id] }
-    assert_equal [failed], store.list_jobs(page: 1, per_page: 1)[:items].map { |job| job[:id] }
-    assert_equal [running], store.list_jobs(page: 2, per_page: 1)[:items].map { |job| job[:id] }
+    assert_equal(["ready"], store.list_jobs(state: :ready, queue: "recording")[:items].map { |job| job[:state] })
+    assert_equal([scheduled], store.list_jobs(state: "scheduled")[:items].map { |job| job[:id] })
+    assert_equal([running], store.list_jobs(state: "running")[:items].map { |job| job[:id] })
+    assert_equal([failed], store.list_jobs(state: "failed")[:items].map { |job| job[:id] })
+    assert_equal([failed], store.list_jobs(page: 1, per_page: 1)[:items].map { |job| job[:id] })
+    assert_equal([running], store.list_jobs(page: 2, per_page: 1)[:items].map { |job| job[:id] })
     assert_raises(ArgumentError) { store.list_jobs(per_page: 101) }
     assert_raises(ArgumentError) { store.list_jobs(state: "unknown") }
     assert_raises(ArgumentError) { store.list_jobs(page: 0) }
