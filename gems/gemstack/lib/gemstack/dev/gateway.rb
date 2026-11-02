@@ -31,9 +31,10 @@ module GemStack
       attr_reader :port
       attr_accessor :api, :frontend
 
-      def initialize(port:, api_path:, api:, frontend: nil, bind: %w[127.0.0.1 ::1], on_error: nil)
+      def initialize(port:, api_path:, api:, dashboard_path: nil, frontend: nil, bind: %w[127.0.0.1 ::1], on_error: nil)
         @port = port
         @api_path = api_path.to_s.chomp("/")
+        @dashboard_path = dashboard_path&.to_s&.chomp("/")
         @api = api
         @frontend = frontend
         @bind = Array(bind)
@@ -63,12 +64,17 @@ module GemStack
       end
 
       def api_request?(path)
+        return true if dashboard_request?(path)
         return true if @api_path.empty?
 
         path == @api_path || path.start_with?("#{@api_path}/")
       end
 
       private
+
+      def dashboard_request?(path)
+        @dashboard_path && (path == @dashboard_path || path.start_with?("#{@dashboard_path}/"))
+      end
 
       def listen(host)
         TCPServer.new(host, @port)

@@ -38,7 +38,7 @@ module GemStack
         api_port = Ports.free(LOOPBACK)
         web_port = Ports.free(LOOPBACK) if frontend?
         @gateway = Gateway.new(
-          port: @dev.port, bind: @dev.bind, api_path: @config.http.api_path,
+          port: @dev.port, bind: @dev.bind, api_path: @config.http.api_path, dashboard_path: jobs_dashboard_path,
           api: Gateway::Upstream.new(:api, LOOPBACK, api_port, "Ruby API"),
           frontend: web_port && Gateway::Upstream.new(:next, LOOPBACK, web_port, "Next.js"),
           on_error: ->(e) { @terminal.line("gateway", "#{e.class}: #{e.message}") }
@@ -56,6 +56,13 @@ module GemStack
         banner
         watch_readiness
         self
+      end
+
+      def jobs_dashboard_path
+        return unless @config.respond_to?(:jobs)
+
+        dashboard = @config.jobs.dashboard
+        dashboard.path if dashboard.enabled
       end
 
       def start_processes(api_port, web_port)
@@ -151,7 +158,10 @@ module GemStack
         t.puts("  #{t.bold("GemStack")} #{t.dim("v#{GemStack::VERSION} · #{@env.fetch("GEMSTACK_ENV",
                                                                                       "development")}")}")
         t.puts
-        split = t.dim("(#{@config.http.api_path}/* → Ruby, everything else → Next.js)")
+        api_paths = @config.http.api_path.to_s.empty? ? ["all paths"] : ["#{@config.http.api_path}/*"]
+        dashboard_path = jobs_dashboard_path
+        ruby_paths = api_paths + (dashboard_path ? [dashboard_path, "#{dashboard_path}/*"] : [])
+        split = t.dim("(#{ruby_paths.join(" and ")} → Ruby, everything else → Next.js)")
         t.puts("  #{t.green("✓")} Gateway    #{url}  #{split}")
         t.puts("  #{t.yellow("…")} Ruby API   #{t.dim("starting on #{@gateway.api} (internal)")}")
         if @gateway.frontend

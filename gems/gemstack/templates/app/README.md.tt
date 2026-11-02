@@ -4,7 +4,7 @@ A [GemStack](https://github.com/gemstack/gemstack) application: a Ruby API with 
 Next.js + TypeScript frontend, served from one origin.
 
 ```bash
-gemstack dev          # http://localhost:3000  (/api/* → Ruby, everything else → Next.js)
+gemstack dev          # http://localhost:3000  (/api/* and /jobs → Ruby)
 gemstack routes       # list API routes
 gemstack test         # run the Ruby tests
 gemstack console      # IRB with the app loaded
@@ -21,9 +21,34 @@ gemstack generate controller Status show
 | `test/` | Minitest + rack-test (`GemStack::TestCase`) |
 | `frontend/` | the Next.js app; `lib/gemstack/client.ts` talks to the API |
 
+## Background jobs
+
+Database-backed apps include the jobs migration and the built-in dashboard at
+`/jobs`. In development, `gemstack dev` sends `/jobs` to Ruby and starts the
+queue worker after the migration is present. The dashboard can inspect queue
+state and completed-job history, and retry or discard failed jobs.
+
+The dashboard uses the `:database` job adapter. Other adapters do not expose
+the persisted queue data it needs. In production, configure
+`config.jobs.dashboard.authorization` in `config/app.rb` to authorize admin
+requests. The callback must return exactly `true` for an authorized admin;
+without one the dashboard returns 404. Check the production setup with
+`gemstack doctor --production`, or disable the dashboard with
+`config.jobs.dashboard.enabled = false`. If your reverse proxy routes traffic
+directly, send both the API path and the configured dashboard path to the Ruby
+server.
+
+For an existing released-gem app, run `gemstack update` to update GemStack and
+reconcile generated files. Review any template conflicts and keep
+`require "gemstack/jobs"` in `config/app.rb`. Template updates do not create or
+apply migrations: if the app has no jobs migration, run `gemstack jobs:install`
+and `gemstack db:migrate`. Apps using GemStack from a `path` checkout must
+update that checkout first.
+
 ## Production
 
 Run the API with `gemstack server` (Puma, `config/puma.rb`) and the frontend
 with `npm run build && npm start` in `frontend/`. Either route `/api/*` to the
 API with your reverse proxy, or set `GEMSTACK_API_URL` for the Next.js process
-and it will proxy `/api/*` itself.
+and it will proxy `/api/*` itself. When enabled, route `/jobs` and `/jobs/*` to
+the Ruby server too; configure authorization before exposing it.

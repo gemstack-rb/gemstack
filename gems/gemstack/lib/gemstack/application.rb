@@ -39,6 +39,7 @@ module GemStack
         @router = build_router { load_routes }
         install_reloader if config.reload_code
         @http = HTTP::App.new(config: config.http, router: @router)
+        @rack_app = build_rack_app
         eager_load! if config.eager_load
         @booted = true
       end
@@ -49,7 +50,7 @@ module GemStack
 
     def call(env)
       boot! unless @booted
-      @http.call(env)
+      @rack_app.call(env)
     end
 
     # Replaces the route table. Called by config/routes.rb via GemStack.routes.
@@ -160,6 +161,41 @@ module GemStack
       router
     ensure
       @pending_routes = nil
+    end
+
+    def build_rack_app
+      return @http unless defined?(GemStack::Jobs)
+
+      dashboard = config.jobs.dashboard
+      return @http unless dashboard.enabled
+
+      validate_dashboard_mount!(dashboard.path)
+      endpoint = Jobs::DashboardApp.new(config: dashboard)
+      HTTP::PathDispatch.new(@http, path: dashboard.path, mounted_app: endpoint)
+    end
+
+    def validate_dashboard_mount!(path)
+      api_path = normalize_mount_path(config.http.api_path)
+      dashboard_path = normalize_mount_path(path)
+      health_path = config.http.health_path && normalize_mount_path(config.http.health_path)
+
+      if paths_overlap?(api_path, dashboard_path)
+        raise ConfigurationError,
+              "jobs dashboard path #{dashboard_path.inspect} overlaps config.http.api_path #{api_path.inspect}"
+      end
+      if health_path && paths_overlap?(health_path, dashboard_path)
+        raise ConfigurationError,
+              "jobs dashboard path #{dashboard_path.inspect} overlaps config.http.health_path #{health_path.inspect}"
+      end
+    end
+
+    def normalize_mount_path(path)
+      value = path.to_s.gsub(%r{/+}, "/").sub(%r{/$}, "")
+      value.empty? ? "/" : (value.start_with?("/") ? value : "/#{value}")
+    end
+
+    def paths_overlap?(left, right)
+      left == "/" || right == "/" || left == right || left.start_with?("#{right}/") || right.start_with?("#{left}/")
     end
   end
 end

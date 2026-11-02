@@ -47,10 +47,49 @@ module GemStack
       setting :table, default: :gemstack_jobs
       # Keep exhausted jobs (failed_at set) for inspection and `gemstack jobs:retry`.
       setting :keep_failed, default: true
+
+      # The built-in web interface for the database-backed queue.
+      namespace :dashboard do
+        setting :enabled, default: true
+
+        # Mounted outside config.http.api_path. Must be an absolute URL path.
+        setting :path, default: "/jobs"
+
+        # Optional Rack-environment authorization callback. It must return
+        # exactly true to allow access. In local environments, access is
+        # allowed when no callback is configured; elsewhere it is denied.
+        # Example: config.jobs.dashboard.authorization = ->(env) { AdminAuth.allowed?(env) }
+        setting :authorization, default: nil
+
+        def path=(value)
+          value = value.to_s
+          unless value.start_with?("/") && !value.start_with?("//") &&
+                 !value.match?(/[?#\\\\\s]/) && value !~ %r{//|/\z}
+            raise ArgumentError, "jobs.dashboard.path must be an absolute path without a trailing slash, query, or fragment"
+          end
+
+          @values[:path] = value
+        end
+
+        def authorization_configured? = authorization.respond_to?(:call)
+
+        # Fail closed outside development/test. The callback receives the
+        # Rack env so an app can reuse its own session or admin authorization.
+        def authorized?(env)
+          return GemStack.env.local? unless authorization_configured?
+
+          authorization.call(env) == true
+        rescue StandardError => e
+          GemStack.logger.warn("jobs dashboard authorization failed", error: e.message)
+          false
+        end
+      end
     end
 
     autoload :Worker, "gemstack/jobs/worker"
     autoload :Testing, "gemstack/jobs/testing"
+    autoload :Dashboard, "gemstack/jobs/dashboard"
+    autoload :DashboardApp, "gemstack/jobs/dashboard_app"
 
     # Raised for arguments that can't round-trip through JSON.
     class SerializationError < Error; end

@@ -55,6 +55,11 @@ GemStack.configure do |config|
   # ── Background jobs ─────────────────────────────────────────────────────
   # config.jobs.default_queue = "default"
   # config.jobs.default_max_attempts = 10          # then the job is kept as failed
+  # config.jobs.dashboard.enabled = true           # built-in database queue UI at /jobs
+  # config.jobs.dashboard.path = "/jobs"           # mounted outside config.http.api_path
+  # The UI needs config.jobs.adapter = :database. In production, configure authorization or disable it:
+  # config.jobs.dashboard.authorization = ->(env) { MyAdminAuth.allowed?(env) }
+  # config.jobs.dashboard.enabled = false
 
   # ── Mail ────────────────────────────────────────────────────────────────
   # config.mail.default_from = "<%= name %> <no-reply@localhost>"   # or MAIL_FROM

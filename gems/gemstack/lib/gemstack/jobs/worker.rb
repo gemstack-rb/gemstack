@@ -100,7 +100,8 @@ module GemStack
 
       def settle(payload, outcome)
         case outcome.status
-        when :performed, :discarded then @store.complete(payload["id"])
+        when :performed then @store.complete(payload["id"])
+        when :discarded then @store.discard(payload["id"])
         when :retry
           @store.reschedule(payload["id"], run_at: outcome.run_at, attempts: outcome.attempt, error: outcome.error)
         when :failed then @store.fail(payload["id"], attempts: outcome.attempt, error: outcome.error)

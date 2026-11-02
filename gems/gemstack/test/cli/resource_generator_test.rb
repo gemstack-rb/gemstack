@@ -295,6 +295,20 @@ class JobGeneratorTest < Minitest::Test
     Dir.glob("#{@root}/**/*.rb").each { |f| assert system(RbConfig.ruby, "-c", f, out: File::NULL), f }
   end
 
+  def test_install_adds_completed_timestamp_migration_for_existing_jobs_table
+    File.write("#{@root}/db/migrations/20260101000000_create_gemstack_jobs.rb", "create_table(:gemstack_jobs)\n")
+
+    GemStack::CLI::JobGenerator.install_migration(@root, output: @out, timestamp: "20260102000000")
+    migration = "#{@root}/db/migrations/20260102000000_add_completed_at_to_gemstack_jobs.rb"
+
+    assert File.file?(migration)
+    assert_includes File.read(migration), "add_column :completed_at, :timestamptz"
+    assert system(RbConfig.ruby, "-c", migration, out: File::NULL)
+
+    GemStack::CLI::JobGenerator.install_migration(@root, output: @out, timestamp: "20260103000000")
+    assert_equal 1, Dir.glob("#{@root}/db/migrations/*_add_completed_at_to_gemstack_jobs.rb").size
+  end
+
   def test_invalid_names
     assert_raises(Thor::Error) { generate("send-email!") }
   end

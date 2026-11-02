@@ -22,6 +22,7 @@ downtime. Nothing is installed by hand on the server.
                             │
                   kamal-proxy (HTTPS, Let's Encrypt)
                   ├── /api/*  ──▶ api role   Ruby API (Puma)          ─┐
+                  ├── /jobs*   ──▶ api role   jobs dashboard (optional) ┤
                   └── /*      ──▶ web role   Next.js                   ├─▶ PostgreSQL / MySQL
                                   jobs role  background job worker    ─┘   (a container on the server)
 ```
@@ -29,8 +30,10 @@ downtime. Nothing is installed by hand on the server.
 - **One server** (any Linux VM with SSH: Hetzner, DigitalOcean, AWS EC2, Google Cloud, your own box)
   runs everything in Docker containers.
 - **One Docker image** holds the whole app; each role runs a different command from it.
-- **kamal-proxy** gets a free HTTPS certificate for your domain and routes `/api` to Ruby and everything
-  else to Next.js — the same single origin as `gemstack dev`.
+- **kamal-proxy** gets a free HTTPS certificate for your domain and routes `/api` to Ruby. If you enable
+  the jobs dashboard, route its configured path (default `/jobs`) to Ruby too; other paths go to Next.js.
+  The generated Kamal config currently sets only `/api` as the API role's path prefix, so add the
+  dashboard route to `config/deploy.yml` before exposing it.
 - **Your database** runs as a container on the same server (a Kamal "accessory"). SQLite apps keep
   their database file on a volume instead.
 - **Deploys** build a new image, start new containers, wait until they're healthy, then switch traffic.
@@ -394,12 +397,17 @@ planned.
 The browser always calls `/api/...` on the site's own origin, so one of these must route it:
 
 1. **A reverse proxy** (what Kamal does): kamal-proxy, Caddy, nginx or a platform's router sends
-   `/api/*` to Puma and everything else to Next.js. For realtime behind nginx, set
+   `/api/*` to Puma and everything else to Next.js. When the jobs dashboard is enabled, add a route for
+   `config.jobs.dashboard.path` (default `/jobs`) to the same Puma service. The generated
+   `config/deploy.yml` currently routes only `/api`; update its proxy configuration and verify that
+   `/jobs` does not reach Next.js. Protect it with the production authorization callback described in
+   [background jobs](background-jobs.md#authorization-and-security). For realtime behind nginx, set
    `proxy_http_version 1.1`, the `Upgrade` and `Connection "upgrade"` headers and a
    `proxy_read_timeout` above 15 s for `/api/realtime` ([realtime](realtime.md)).
 2. **Next.js rewrites:** set `GEMSTACK_API_URL` (e.g. `http://api.internal:4000`) **when building**
-   the frontend, and Next.js proxies `/api/*` to Ruby — HTTP, Server-Sent Events and WebSockets. Deploy
-   Next.js publicly and the API privately.
+   the frontend, and Next.js proxies `/api/*` to Ruby — HTTP, Server-Sent Events and WebSockets. This
+   rewrite does not proxy `/jobs`; add a separate proxy route for the configured dashboard path or
+   disable the dashboard. Deploy Next.js publicly and the API privately.
 3. **Separate domains** (`api.example.com`): build the frontend with
    `NEXT_PUBLIC_GEMSTACK_API_URL=https://api.example.com` and allow the site in
    `config/environments/production.rb`: `config.http.cors.origins = ["https://example.com"]`.
@@ -410,6 +418,8 @@ The browser always calls `/api/...` on the site's own origin, so one of these mu
   the api container: `bin/deploy app exec --roles=api "bundle exec gemstack doctor --production"`.
 - `SECRET_KEY_BASE` is set (`openssl rand -hex 64`) and **never changes** — signed links and sessions
   depend on it.
+- If the jobs dashboard is enabled, its path is routed to Ruby, its authorization callback checks the
+  real admin identity, and `gemstack doctor --production` passes.
 - The database is backed up, and the backups are copied off the server.
 - Apps with auth or mailers: `SMTP_URL`, `MAIL_FROM` and `APP_URL` are set; a jobs worker runs (emails
   are sent from jobs); call `GemStack::Auth.cleanup!` daily.

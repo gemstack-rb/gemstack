@@ -9,15 +9,26 @@ module GemStack
     # they actually use background jobs.
     class JobGenerator < Generator
       MIGRATION_GLOB = "db/migrations/*_create_gemstack_jobs.rb"
+      COMPLETED_MIGRATION_GLOB = "db/migrations/*_add_completed_at_to_gemstack_jobs.rb"
 
       attr_reader :class_name, :file_name, :queue_name
 
       def self.install_migration(root, output: $stdout, timestamp: nil)
         existing = Dir.glob(File.join(root, MIGRATION_GLOB)).first
         generator = new("Placeholder", root: root, output: output)
-        return generator.status("identical", existing, "jobs table migration already present") if existing
-
         require "gemstack/jobs"
+        if existing
+          source = File.read(existing)
+          history_migration = Dir.glob(File.join(root, COMPLETED_MIGRATION_GLOB)).any?
+          if source.include?("completed_at") || history_migration
+            return generator.status("identical", existing, "jobs history migration already present")
+          end
+
+          stamp = timestamp || Generator.migration_timestamp(root)
+          path = File.join(root, "db/migrations/#{stamp}_add_completed_at_to_gemstack_jobs.rb")
+          return generator.write(path, Jobs::Migration::COMPLETED_AT_SOURCE)
+        end
+
         stamp = timestamp || Generator.migration_timestamp(root)
         generator.write(File.join(root, "db/migrations/#{stamp}_create_gemstack_jobs.rb"), Jobs::Migration::SOURCE)
       end

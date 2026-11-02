@@ -202,6 +202,7 @@ module GemStack
         else pass("SECRET_KEY_BASE is set")
         end
         check_production_database if defined?(GemStack::DB)
+        check_jobs_dashboard_authorization
         if defined?(GemStack::Mail) && GemStack.config.mail.delivery.to_s == "smtp"
           env_check("SMTP_URL", "e.g. smtp://user:password@smtp.example.com:587")
         end
@@ -210,6 +211,21 @@ module GemStack
         return unless GemStack.config.respond_to?(:cache) && GemStack.config.cache.store.to_s == "redis"
 
         env_check("REDIS_URL", "the Redis used by the cache")
+      end
+
+      def check_jobs_dashboard_authorization
+        return unless defined?(GemStack::Jobs)
+
+        dashboard = GemStack.config.jobs.dashboard
+        return unless dashboard.enabled
+
+        if dashboard.authorization_configured?
+          pass("jobs dashboard authorization configured")
+        else
+          problem("jobs dashboard has no production authorization",
+                  "set config.jobs.dashboard.authorization to a callable that returns true for authorized Rack envs, " \
+                  "or disable it with config.jobs.dashboard.enabled = false")
+        end
       end
 
       def check_production_database

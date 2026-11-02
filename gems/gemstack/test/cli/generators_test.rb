@@ -69,9 +69,17 @@ class AppGeneratorTest < Minitest::Test
     root = generate("my-shop")
 
     assert_includes File.read(File.join(root, "config/app.rb")), %(config.name = "my-shop")
+    app_config = File.read(File.join(root, "config/app.rb"))
+    assert_includes app_config, %(config.jobs.dashboard.path = "/jobs")
+    assert_includes app_config, "config.jobs.dashboard.authorization"
+    assert_includes app_config, "config.jobs.dashboard.enabled = false"
+    readme = File.read(File.join(root, "README.md"))
+    assert_includes readme, "built-in dashboard at"
+    assert_includes readme, "production"
     assert_includes File.read(File.join(root, "frontend/app/layout.tsx")), %(title: "MyShop")
     assert_equal "my-shop-frontend", JSON.parse(File.read(File.join(root, "frontend/package.json")))["name"]
     refute_includes File.read(File.join(root, "frontend/app/page.tsx")), "<%"
+    assert_includes @out.string, "http://localhost:3000/jobs"
   end
 
   def test_sqlite_is_the_default_database
@@ -116,6 +124,7 @@ class AppGeneratorTest < Minitest::Test
 
     refute File.exist?(File.join(root, "config/database.yml"))
     refute_includes File.read(File.join(root, "Gemfile")), "sqlite3"
+    assert_includes @out.string, "requires a database-backed jobs adapter"
   end
 
   def test_gemfile_uses_checkout_when_available

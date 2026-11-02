@@ -139,6 +139,13 @@ module GemStack
 
             cd #{name}
             gemstack dev        # → http://localhost:3000
+        TEXT
+        if database?
+          @output.puts("  Jobs dashboard: http://localhost:3000/jobs (database adapter; authorize it in production)")
+        else
+          @output.puts("  Jobs dashboard: requires a database-backed jobs adapter")
+        end
+        @output.puts <<~TEXT
 
           Next: gemstack generate resource Product name:string price:decimal
           Useful commands: gemstack routes · gemstack test · gemstack console · gemstack db:migrate

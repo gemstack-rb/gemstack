@@ -103,6 +103,11 @@ See [background jobs](background-jobs.md#configuration): `config.jobs.adapter`,
 `default_max_attempts`, `poll_interval`, `lock_timeout`, `shutdown_timeout`,
 `keep_failed`, and `config.dev.jobs_command`.
 
+The built-in dashboard settings are documented in
+[background jobs: dashboard](background-jobs.md#jobs-dashboard):
+`config.jobs.dashboard.enabled`, `path`, and `authorization`. It is mounted
+outside the API prefix and requires the database adapter and jobs table.
+
 ### Realtime (`gemstack-realtime`)
 
 See [realtime](realtime.md#configuration): `config.realtime.broker`, `path`,

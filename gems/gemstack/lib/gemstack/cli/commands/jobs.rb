@@ -28,8 +28,10 @@ module GemStack
         stats = Jobs::Adapters::Database.new.stats
         return say("No jobs.") if stats.empty?
 
-        rows = stats.sort.map { |queue, s| [queue, s[:ready], s[:scheduled], s[:running], s[:failed]].map(&:to_s) }
-        print_table([%w[Queue Ready Scheduled Running Failed], *rows])
+        rows = stats.sort.map do |queue, s|
+          [queue, s[:ready], s[:scheduled], s[:running], s[:failed], s[:completed]].map(&:to_s)
+        end
+        print_table([%w[Queue Ready Scheduled Running Failed Completed], *rows])
       end
     end
 
@@ -64,7 +66,7 @@ module GemStack
       end
     end
 
-    desc "jobs:install", "Add the gemstack_jobs table migration (done automatically by `generate job`)"
+    desc "jobs:install", "Install or update the gemstack_jobs migrations"
     def jobs_install
       JobGenerator.install_migration(Project.root!, output: $stdout)
     end
