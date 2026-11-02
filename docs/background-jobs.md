@@ -69,10 +69,11 @@ never run by two workers at once. (The `:async` and
 | `retry_on X, attempts:, wait:` | your policy for X (the most recently declared matching rule wins) |
 | `discard_on X` | dropped and logged, never retried |
 | attempts exhausted | kept as **failed** (`failed_at`, `last_error`) for inspection |
+| success | kept in **completed** history (`completed_at`) until deleted |
 | unknown job class | failed immediately |
 
 ```bash
-gemstack jobs:status            # ready / scheduled / running / failed per queue
+gemstack jobs:status            # ready / scheduled / running / failed / completed per queue
 gemstack jobs:failed            # recent failures with their errors
 gemstack jobs:retry [IDS…]      # back on the queue (all failed jobs without ids)
 gemstack jobs:discard [IDS…]    # delete failed jobs
@@ -95,6 +96,98 @@ gemstack jobs -q mailers,default -c 10     # specific queues, 10 threads
   put unfinished jobs back on the queue.
 - Each worker needs `concurrency + 2` database connections; the command sizes
   the pool automatically.
+
+## Jobs dashboard
+
+Apps that load `gemstack/jobs` expose the built-in operations UI at `/jobs` by
+default. It shows queue counts, paginated jobs, job arguments, errors, and
+completed-job history, and offers retry/discard actions for failed jobs.
+Successful jobs remain in Completed until deleted. The dashboard reads persisted
+rows through the database adapter; it does not inspect Sidekiq, in-process
+`:async` jobs, `:inline` jobs or the `:test` adapter. Requests to `/jobs` with
+another adapter receive an unavailable response. The `gemstack dev` gateway
+sends the dashboard path to Ruby as well as the API path.
+
+The dashboard requires the `gemstack_jobs` table. New database-backed apps get
+its migration from `gemstack new`, and the development worker starts after the
+migration is present. Existing apps need the migration too; see
+[upgrading an existing app](#upgrading-an-existing-app).
+
+### Authorization and security
+
+The dashboard can reveal serialized arguments, exception messages and
+backtraces, and its forms can change queue state. In development and test it is
+open by default for local use. In production and other non-local environments,
+it returns 404 unless an authorization callback is configured.
+`gemstack doctor --production` reports when the dashboard is enabled without a
+callback.
+
+Set `config.jobs.dashboard.authorization` to a callable that receives the Rack
+environment and returns **exactly `true`** for an authorized administrator:
+
+```ruby
+# config/app.rb
+GemStack.configure do |config|
+  config.jobs.dashboard.authorization = ->(env) { AdminAuthorization.allowed?(env) }
+end
+```
+
+Implement `AdminAuthorization.allowed?` using the app's actual administrator
+session, identity provider or network policy. A callback's presence is not an
+authorization policy by itself. Any return value other than `true`, and any
+exception raised by the callback, denies access. The denial is a 404 so the
+endpoint does not reveal itself. The callback runs for every page and every
+mutation. The production dashboard also needs the app's stable
+`SECRET_KEY_BASE`; `gemstack doctor --production` checks it.
+
+Retry and discard are POST forms protected by a CSRF token tied to an
+HttpOnly, SameSite cookie and `SECRET_KEY_BASE`. Only a row still marked failed
+can be changed by either action. Responses use `Cache-Control: no-store`,
+restrictive content security policy and HTML escaping for job data.
+
+To disable the UI, set:
+
+```ruby
+config.jobs.dashboard.enabled = false
+```
+
+To move it, set an absolute path without a trailing slash:
+
+```ruby
+config.jobs.dashboard.path = "/internal/jobs"
+```
+
+The path is outside `config.http.api_path`; it must not overlap the API path or
+the health check path. `gemstack dev` sends the configured path to Ruby. In
+production, route that path to the Ruby API process through the reverse proxy;
+do not send it to the frontend. The generated Kamal config currently routes
+`/api` to Ruby, so customize its proxy routes when exposing `/jobs`. A Next.js
+`GEMSTACK_API_URL` rewrite proxies `/api/*` only and does not carry `/jobs`.
+
+### Upgrading an existing app
+
+For an app using released GemStack gems, run `gemstack update`. It updates the
+GemStack gems and reconciles generated files, including `config/app.rb`, while
+preserving or reporting local edits. Review its output: if your customized
+`config/app.rb` is reported as a conflict, merge the new settings and make
+sure it still contains `require "gemstack/jobs"`.
+
+Template reconciliation deliberately does not create or apply migrations.
+Install or update the jobs migrations, then apply them:
+
+```bash
+gemstack jobs:install
+gemstack db:migrate
+```
+
+Then verify with `gemstack doctor`. If the database is unavailable or the
+migration fails, fix the connection and rerun `gemstack db:migrate`; the
+dashboard reports that the database/jobs migration is unavailable until the
+table exists. Apps without a database cannot use this dashboard until they
+configure a database adapter. For a GemStack `path` checkout, `gemstack update`
+does not fetch or replace the checkout: update the checkout as the command
+instructs, then apply the template and migration steps supported by that
+checkout.
 
 ## Adapters
 
@@ -171,6 +264,9 @@ GemStack::Jobs.subscribe { |event| Metrics.increment("jobs.#{event.name}") }   #
 | `config.jobs.lock_timeout` | `1800` s — a job locked longer is assumed abandoned |
 | `config.jobs.shutdown_timeout` | `25` s |
 | `config.jobs.keep_failed` | `true` |
+| `config.jobs.dashboard.enabled` | `true` |
+| `config.jobs.dashboard.path` | `"/jobs"` (outside `config.http.api_path`) |
+| `config.jobs.dashboard.authorization` | `nil`; local environments allow access, non-local environments deny access until a callable returning `true` is configured |
 | `config.dev.jobs_command` | `bundle exec gemstack jobs` (`nil` = don't run a worker in `gemstack dev`) |
 
 Not included (yet): recurring (cron) jobs, unique jobs, batches. For those,

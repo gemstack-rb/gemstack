@@ -19,6 +19,8 @@ module GemStack
 
       # The first version whose `gemstack update --templates` exists.
       TEMPLATE_UPDATES_SINCE = Gem::Version.new("0.3.6")
+      # The first release that includes the built-in jobs dashboard.
+      JOBS_DASHBOARD_SINCE = Gem::Version.new("0.4.4")
 
       def initialize(root:, version: nil, output: $stdout, latest: nil, bundle: nil, templates: nil)
         @root = root
@@ -46,10 +48,12 @@ module GemStack
         current = locked_version
         if current == target
           @output.puts("GemStack is already #{target}.")
+          report_jobs_dashboard(current)
           return true
         end
         if current && Gem::Version.new(target) < Gem::Version.new(current) && !@version
           @output.puts("GemStack #{current} is newer than the latest release (#{target}); nothing to do.")
+          report_jobs_dashboard(current)
           return true
         end
 
@@ -58,6 +62,7 @@ module GemStack
 
       private
 
+      # rubocop:disable-next Metrics/MethodLength
       def update(gemfile, listed, current, target)
         @output.puts("Updating GemStack #{current || "(not installed yet)"} → #{target}")
         updated = listed.reduce(gemfile) { |text, name| constrain(text, name, target) }
@@ -80,7 +85,13 @@ module GemStack
         end
 
         @output.puts("\nGemStack #{target} is installed.\n\n")
-        update_templates(target)
+        unless update_templates(target)
+          return failure(
+            "generated files weren't reconciled; resolve template conflicts, then run: gemstack update --templates"
+          )
+        end
+
+        report_jobs_dashboard(target)
         @output.puts(<<~DONE)
 
           Next:
@@ -100,9 +111,22 @@ module GemStack
       end
 
       def update_templates(target)
-        return if Gem::Version.new(target) < TEMPLATE_UPDATES_SINCE
+        return true if Gem::Version.new(target) < TEMPLATE_UPDATES_SINCE
 
-        @templates.call || @output.puts("Templates weren't updated; run: gemstack update --templates")
+        !!@templates.call
+      end
+
+      def report_jobs_dashboard(target)
+        return unless target && Gem::Version.new(target) >= JOBS_DASHBOARD_SINCE
+
+        @output.puts(<<~JOBS)
+          Jobs dashboard: runtime and generated app wiring are installed at /jobs.
+            - Ensure the database has the gemstack_jobs table; if this app has no jobs migration, run:
+                gemstack jobs:install
+                gemstack db:migrate
+            - In production, set config.jobs.dashboard.authorization and run gemstack doctor --production.
+            - If you expose the dashboard, route /jobs to the Ruby process through your proxy.
+        JOBS
       end
 
       def gem_line(name) = /^\s*gem\s+["']#{Regexp.escape(name)}["']/

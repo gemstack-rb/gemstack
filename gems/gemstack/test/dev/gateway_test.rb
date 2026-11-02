@@ -43,6 +43,16 @@ class GatewayTest < Minitest::Test
     assert_equal "web:/_next/static/chunk.js", http.get("/_next/static/chunk.js").body
   end
 
+  def test_routes_dashboard_mount_to_api_without_catching_neighbor_paths
+    gateway = start_gateway(api: upstream(@api), frontend: upstream(@web), dashboard_path: "/ops/jobs")
+
+    assert_equal "api:/ops/jobs", http(gateway).get("/ops/jobs").body
+    assert_equal "api:/ops/jobs/failed", http(gateway).get("/ops/jobs/failed").body
+    assert_equal "web:/ops/jobs-extra", http(gateway).get("/ops/jobs-extra").body
+  ensure
+    gateway&.stop
+  end
+
   def test_forwards_request_bodies
     response = http.post("/api/items", '{"name":"Lamp"}', "content-type" => "application/json")
 

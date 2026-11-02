@@ -4,6 +4,20 @@ All GemStack gems are released together with one version.
 
 ## Unreleased
 
+- Built-in database jobs dashboard at `/jobs`, with completed-job history
+  retained in the database and a Completed tab, enabled by default when
+  `gemstack/jobs` is loaded. Successful rows now carry `completed_at`, and
+  `gemstack jobs:status` includes completed counts. Adapters other than the
+  database adapter report that dashboard data is unsupported. Local development
+  and test environments can access it by default. Production denies access
+  until `config.jobs.dashboard.authorization` is set to a callable that
+  authorizes the request. `gemstack update` installs the runtime and generated
+  app wiring, then reports the jobs migration, production authorization, and
+  proxy routing prerequisites. Existing apps should run `gemstack jobs:install`
+  and `gemstack db:migrate` to add the completed-history column. New jobs-table
+  migrations include that column from the start.
+  `docs/jobs_smoke_test.md` documents dashboard and worker checks;
+  the shop example includes demo jobs and a helper to enqueue or clear them.
 - `gemstack deploy` (`bin/deploy`) refuses to run when `config/deploy.yml`, `.kamal/secrets` or the
   Dockerfile still contain conflict markers from a `gemstack update` merge, naming the files and lines —
   instead of Kamal failing with a YAML syntax error.

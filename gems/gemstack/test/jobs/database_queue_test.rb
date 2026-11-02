@@ -24,6 +24,21 @@ class DatabaseQueueTest < Minitest::Test
     assert_equal [1, { "k" => [true, nil] }], args
   end
 
+  def test_completed_history_migration_upgrades_an_existing_jobs_table
+    db = JobsDB.db
+    db.drop_table(:gemstack_jobs)
+    db.create_table(:gemstack_jobs) { primary_key :id }
+    Sequel.extension :migration
+    # rubocop:disable-next Security/Eval -- Migration source is evaluated here to verify its legacy upgrade path.
+    eval(GemStack::Jobs::Migration::COMPLETED_AT_SOURCE, TOPLEVEL_BINDING,
+         "add_completed_at_to_gemstack_jobs.rb").apply(db, :up)
+
+    assert_includes db.schema(:gemstack_jobs).map(&:first), :completed_at
+  ensure
+    db&.drop_table?(:gemstack_jobs)
+    GemStack::Jobs::Migration.apply(db) if db
+  end
+
   def test_claim_order_priority_then_run_at
     low = enqueue(RecordingJob, "low", priority: 200)
     high = enqueue(RecordingJob, "high", priority: 1)
@@ -106,7 +121,88 @@ class DatabaseQueueTest < Minitest::Test
     store.claim(["*"], "w")
     enqueue(RecordingJob)
 
-    assert_equal({ ready: 1, scheduled: 1, running: 1, failed: 0 }, store.stats["recording"])
+    assert_equal({ ready: 1, scheduled: 1, running: 1, failed: 0, completed: 0 }, store.stats["recording"])
+  end
+
+  def test_dashboard_lists_are_filtered_bounded_and_include_derived_state
+    ready = enqueue(RecordingJob, "ready")
+    scheduled = enqueue(RecordingJob, "scheduled", wait: 3600)
+    running = enqueue(RecordingJob, "running")
+    failed = enqueue(RecordingJob, "failed")
+    rows.where(id: running).update(locked_at: Time.now, locked_by: "dashboard-worker")
+    rows.where(id: failed).update(locked_at: nil, locked_by: nil, failed_at: Time.now,
+                                  last_error: "RuntimeError: broken")
+
+    all = store.list_jobs(per_page: 10)
+    assert_equal 4, all[:total]
+    assert_equal %w[failed ready running scheduled], all[:items].map { |job| job[:state] }.sort
+    ordered = store.list_jobs(per_page: 4)[:items]
+    assert_equal([failed, running, scheduled, ready], ordered.map { |job| job[:id] })
+    assert_equal ["failed"], ordered.first[:args]
+    assert_equal(["ready"], store.list_jobs(state: :ready, queue: "recording")[:items].map { |job| job[:state] })
+    assert_equal([scheduled], store.list_jobs(state: "scheduled")[:items].map { |job| job[:id] })
+    assert_equal([running], store.list_jobs(state: "running")[:items].map { |job| job[:id] })
+    assert_equal([failed], store.list_jobs(state: "failed")[:items].map { |job| job[:id] })
+    assert_equal([failed], store.list_jobs(page: 1, per_page: 1)[:items].map { |job| job[:id] })
+    assert_equal([running], store.list_jobs(page: 2, per_page: 1)[:items].map { |job| job[:id] })
+    assert_raises(ArgumentError) { store.list_jobs(per_page: 101) }
+    assert_raises(ArgumentError) { store.list_jobs(state: "unknown") }
+    assert_raises(ArgumentError) { store.list_jobs(page: 0) }
+  end
+
+  def test_dashboard_detail_decodes_args_and_single_job_actions_only_change_failed_jobs
+    failed = enqueue(RecordingJob, { "nested" => [1, true] })
+    ready = enqueue(RecordingJob, "still ready")
+    rows.where(id: failed).update(failed_at: Time.now, last_error: "RuntimeError: broken")
+
+    detail = store.find_job(failed)
+    assert_equal({ "nested" => [1, true] }, detail[:args].first)
+    assert_equal "RuntimeError: broken", detail[:last_error]
+    assert_nil store.find_job(999_999)
+    assert_raises(ArgumentError) { store.find_job("not-an-id") }
+
+    assert store.retry_failed_job(failed)
+    refute store.retry_failed_job(ready)
+    assert_nil rows.first(id: failed)[:failed_at]
+    refute store.discard_failed_job(ready)
+    rows.where(id: failed).update(failed_at: Time.now)
+    assert store.discard_failed_job(failed)
+    assert_nil rows.first(id: failed)
+  end
+
+  def test_dashboard_run_now_and_delete_actions_only_touch_unlocked_jobs
+    ready = enqueue(RecordingJob, "ready")
+    scheduled = enqueue(RecordingJob, "scheduled", wait: 3600)
+    running = enqueue(RecordingJob, "running")
+    failed = enqueue(RecordingJob, "failed")
+    rows.where(id: running).update(locked_at: Time.now, locked_by: "worker")
+    rows.where(id: failed).update(failed_at: Time.now)
+
+    assert store.run_job_now(scheduled)
+    assert_operator rows.first(id: scheduled)[:run_at], :<=, Time.now
+    refute store.run_job_now(running)
+    refute store.run_job_now(failed)
+    assert store.delete_pending_job(ready)
+    refute store.delete_pending_job(running)
+    refute store.delete_pending_job(failed)
+    assert rows.first(id: running)
+    assert rows.first(id: failed)
+  end
+
+  def test_dashboard_bulk_actions_limit_ids_and_never_touch_running_jobs
+    scheduled = enqueue(RecordingJob, "scheduled", wait: 3600)
+    ready = enqueue(RecordingJob, "ready")
+    running = enqueue(RecordingJob, "running")
+    failed = enqueue(RecordingJob, "failed")
+    rows.where(id: running).update(locked_at: Time.now, locked_by: "worker")
+    rows.where(id: failed).update(failed_at: Time.now)
+
+    assert_equal 1, store.run_jobs_now([scheduled, running, failed])
+    assert_equal 1, store.retry_failed_jobs([failed, ready])
+    assert_equal 1, store.delete_jobs([ready, running])
+    assert rows.first(id: running)
+    assert rows.first(id: failed)
+    assert_raises(ArgumentError) { store.delete_jobs(Array.new(101, ready)) }
   end
 end
 
@@ -162,28 +258,31 @@ class WorkerTest < Minitest::Test
 
     assert_equal [:performed, ["hello"], 1], item
     assert_operator Time.now - started, :<, 1.5, "NOTIFY should beat the 5s poll"
-    assert(wait_for { JobsDB.db[:gemstack_jobs].none? })
+    assert(wait_for { JobsDB.db[:gemstack_jobs].where(completed_at: nil).none? })
   end
 
   def test_work_once_settles_every_outcome
     w = worker
-    enqueue(FlakyJob, "x")
+    completed = enqueue(FlakyJob, "x")
 
     assert_equal :retry, w.work_once.status
     assert_equal 1, JobsDB.db[:gemstack_jobs].first[:attempts]
     assert_equal :performed, w.work_once.status # wait: 0 → ready again immediately
-    assert_equal 0, JobsDB.db[:gemstack_jobs].count
+    assert JobsDB.db[:gemstack_jobs].first(id: completed)[:completed_at]
+    assert_nil JobsDB.db[:gemstack_jobs].first(id: completed)[:last_error]
+    assert_equal 1, store.list_jobs(state: :completed)[:total]
+    assert_nil store.claim(["*"], "another-worker")
 
     enqueue(AlwaysFailingJob)
     2.times { w.work_once }
 
-    assert JobsDB.db[:gemstack_jobs].first[:failed_at]
+    assert JobsDB.db[:gemstack_jobs].exclude(failed_at: nil).first[:failed_at]
 
-    JobsDB.db[:gemstack_jobs].delete
+    JobsDB.db[:gemstack_jobs].where(completed_at: nil).delete
     enqueue(DiscardingJob)
 
     assert_equal :discarded, w.work_once.status
-    assert_equal 0, JobsDB.db[:gemstack_jobs].count
+    assert_equal [completed], JobsDB.db[:gemstack_jobs].select_map(:id)
     assert_nil w.work_once
   end
 

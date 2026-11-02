@@ -259,7 +259,10 @@ module GemStack
     no_commands do
       def update_templates
         root = Project.ensure_bundle!(self.class.argv) # the app's installed GemStack renders its templates
-        TemplateUpdate.new(root: root, from: options[:from], dry_run: options[:dry_run]).run
+        result = TemplateUpdate.new(root: root, from: options[:from], dry_run: options[:dry_run]).run
+        exit(1) if result.conflicts.any? || result.marked.any?
+
+        result
       end
     end
 
